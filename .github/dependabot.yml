@@ -1,0 +1,23 @@
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      tokio-stack:
+        patterns: ["tokio*", "tower*", "axum*"]
+      tracing-stack:
+        patterns: ["tracing*"]
+
+  - package-ecosystem: pip
+    directory: "/python/hex-convert"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly

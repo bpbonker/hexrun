@@ -1,0 +1,23 @@
+[package]
+name = "hexrun-cli"
+description = "hexrun CLI: NPU-first local LLM runtime for Snapdragon X Elite"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "hexrun"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+tokio = { workspace = true }
+clap = { workspace = true }
+hexrun-core = { path = "../hexrun-core" }
+hexrun-registry = { path = "../hexrun-registry" }
+hexrun-server = { path = "../hexrun-server" }

@@ -1,0 +1,27 @@
+[package]
+name = "hexrun-core"
+description = "Inference engine core: tokenizer, sampler, KV cache, generation loop"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+ort = { workspace = true }
+tokenizers = { workspace = true }
+ndarray = { workspace = true }
+half = { workspace = true }
+qnn = { path = "../qnn", optional = true }
+
+[features]
+default = []
+# Enables the qnn-direct backend path (loads .qnn_ctx.bin without ORT).
+qnn-direct = ["dep:qnn"]

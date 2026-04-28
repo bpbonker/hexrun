@@ -1,0 +1,22 @@
+[package]
+name = "qnn-sys"
+description = "Raw FFI bindings to the Qualcomm AI Engine Direct (QNN) SDK"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+links = "QnnSystem"
+
+[lib]
+
+[build-dependencies]
+bindgen = { workspace = true }
+
+[features]
+default = []
+# When set, build.rs hard-fails if QNN_SDK_ROOT is unset.
+# When unset (default), build.rs emits stub bindings so the rest of the
+# workspace can compile without the QNN SDK present.
+require-sdk = []

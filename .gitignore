@@ -1,0 +1,44 @@
+/target
+**/*.rs.bk
+Cargo.lock.bak
+
+# Local model cache
+/models
+**/*.qnn_ctx.bin
+**/*.onnx
+**/*.onnx.data
+**/*.gguf
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+.python-version
+dist/
+build/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local env
+.env
+.env.local
+
+# QNN profiling output
+QnnHtp.log
+qnn_profile_*.csv
+
+# Generated bindgen output (kept in OUT_DIR by default)
+/bindings.rs

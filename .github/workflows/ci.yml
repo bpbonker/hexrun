@@ -1,0 +1,69 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  fmt-clippy:
+    name: fmt + clippy (no QNN SDK)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: cargo fmt
+        run: cargo fmt --all -- --check
+      - name: cargo clippy (default-members only)
+        run: cargo clippy --workspace --exclude qnn --exclude qnn-sys -- -D warnings
+
+  build-default:
+    name: build (default-members, x64 host, no SDK)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: cargo build
+        run: cargo build --workspace --exclude qnn --exclude qnn-sys
+
+  test-default:
+    name: test (default-members)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: cargo test
+        run: cargo test --workspace --exclude qnn --exclude qnn-sys
+
+  python-lint:
+    name: hex-convert lint
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: install ruff
+        run: pip install ruff
+      - name: ruff check
+        working-directory: python/hex-convert
+        run: ruff check .
+
+  # Self-hosted ARM64 runner with the QNN SDK pre-installed runs the full
+  # build + NPU integration tests. Wire up once the dev laptop is enrolled
+  # as a self-hosted runner.
+  build-arm64-with-qnn:
+    name: build aarch64-pc-windows-msvc (full, requires QNN SDK)
+    runs-on: [self-hosted, Windows, ARM64]
+    if: false # enable once self-hosted runner is configured
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-pc-windows-msvc
+      - name: cargo build (full workspace)
+        env:
+          QNN_SDK_ROOT: ${{ secrets.QNN_SDK_ROOT }}
+        run: cargo build --workspace --target aarch64-pc-windows-msvc

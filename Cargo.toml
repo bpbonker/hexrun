@@ -1,0 +1,64 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/qnn-sys",
+    "crates/qnn",
+    "crates/hexrun-core",
+    "crates/hexrun-registry",
+    "crates/hexrun-server",
+    "crates/hexrun-cli",
+]
+default-members = [
+    "crates/hexrun-core",
+    "crates/hexrun-registry",
+    "crates/hexrun-server",
+    "crates/hexrun-cli",
+]
+
+[workspace.package]
+version = "0.1.0-dev"
+edition = "2021"
+rust-version = "1.82"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/USER/hexrun"
+authors = ["hexrun contributors"]
+
+[workspace.dependencies]
+# Core
+anyhow = "1"
+thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+bytes = "1"
+
+# CLI
+clap = { version = "4", features = ["derive", "env"] }
+
+# HTTP server / client
+axum = { version = "0.7", features = ["macros"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["cors", "trace"] }
+reqwest = { version = "0.12", features = ["stream", "rustls-tls"], default-features = false }
+futures = "0.3"
+futures-util = "0.3"
+
+# ML
+ort = { version = "2.0.0-rc.10", default-features = false, features = ["std", "load-dynamic"] }
+tokenizers = { version = "0.21", default-features = false, features = ["onig"] }
+ndarray = "0.16"
+half = "2"
+
+# Build / FFI
+bindgen = "0.71"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = "debuginfo"
+
+[profile.dev]
+opt-level = 1

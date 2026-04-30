@@ -65,6 +65,8 @@ full operational state.
 | NexaSDK | NPU, but closed CLI |
 | **npurun** | NPU, open Rust, embeddable |
 
+The table above is specifically about **NPU** acceleration — most of these tools run fine on this laptop's CPU (and llama.cpp also runs on the Adreno GPU via Vulkan/OpenCL backends). The 45 TOPS Hexagon NPU is the part that stays idle. npurun fills that gap.
+
 ## Performance, honestly
 
 | Model | Hardware | Steady-state | TTFT |

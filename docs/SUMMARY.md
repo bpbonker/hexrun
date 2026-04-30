@@ -18,3 +18,4 @@
 - [Architecture](architecture.md)
 - [Findings](findings.md)
 - [Paper](paper.md)
+- [Repo hygiene](repo_hygiene.md)

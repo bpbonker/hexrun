@@ -177,11 +177,49 @@ toolchain looks more confusing than it should.
 
 ## Performance
 
-These are first-pass numbers, intentionally conservative. The first
-`genie-t2t-run.exe` invocation pays a ~30-second cost loading 4.6 GB of
-context binaries into NPU shared memory. Steady-state per-token rates
-will only be measurable once the runtime can keep the bundle loaded
-across queries (Phase 1 work).
+**Measured on hardware, not estimated.** Phase 1 of `hexrun` (Rust
+bindings to libGenie) lets us load the bundle once and run multiple
+queries against the same in-memory dialog, which is what we needed for
+honest steady-state numbers. See `docs/benchmarks.md` for full data.
+
+### Headline numbers (Qwen 2.5 7B INT4 on Snapdragon X Elite NPU, plugged in)
+
+| Metric | Value |
+|---|---|
+| Bundle cold load (4.6 GB into NPU shared memory) | 8.65 s, then never paid again |
+| Time-to-first-token | ~800 ms for a 50-token prompt |
+| **Steady-state generation** | **~1.4 tokens / second** |
+| NPU sustained utilization | ~19% |
+| NPU shared memory in use | 4.9 / 7.8 GB |
+| CPU during generation | ~12% |
+
+### Honest comparison vs. expectations
+
+| Source | Number | Reality |
+|---|---|---|
+| Qualcomm marketing for 7B on 45 TOPS | 25-35 tok/s | Likely a synthetic benchmark; not what we see |
+| Community reports on r/LocalLLaMA | 5-15 tok/s | Closer to what we'd expect, still ~3-10× our number |
+| Our measurement (Phase 1, untuned) | **1.4 tok/s** | What you actually get out of the box today |
+| llama.cpp on Oryon CPU (same model, Q4 GGUF) | ~3-5 tok/s | We're slower per-token than CPU |
+
+**Two important caveats** before drawing conclusions:
+
+1. **Configuration is untuned.** `cpu-mask: 0xe0` enables only 3 of 12 CPU
+   cores for Genie's orchestration. `n-threads: 3` matches. These are
+   Qualcomm's conservative template defaults; we have not yet measured
+   whether opening them up improves throughput.
+2. **The 6-shard split** means each token forward pass traverses 6
+   separately-compiled context binaries. Context-switch cost between
+   shards may dominate decode time; some Genie configs use fewer larger
+   shards.
+
+### What this means honestly
+
+For interactive chat at our current numbers, this is **slower than the
+CPU path**. That's the part we can't paper over. For a properly
+performant deployment on this hardware today you would still pick CPU
+inference via Ollama unless you cared specifically about energy
+efficiency, NPU offload, or future tunability.
 
 | Metric | Value | Notes |
 |---|---|---|
@@ -396,6 +434,67 @@ acceleration:
    text, you're hitting CPU fallback silently.
 
 ---
+
+## Meaningful contribution to Windows-on-ARM, honestly assessed
+
+After measuring, the contribution looks like this:
+
+**Real and useful:**
+
+- A working **Rust binding to Genie** (`qnn-sys` + `qnn` crates) that any
+  Windows ARM project can pull in. Nobody else has shipped this. It's
+  the foundation other projects can build on, regardless of how
+  performance evolves on this generation of hardware.
+- A documented, **reproducible recipe** that takes a fresh laptop to
+  NPU-running-an-LLM in a few hours, with all twelve toolchain
+  papercuts called out. Someone trying this in May 2026 will save
+  themselves the half-day each papercut cost us.
+- A **benchmarking harness** (`crates/qnn/examples/qwen-bench.rs`) that
+  produces honest numbers other people can compare against, instead of
+  vendor marketing.
+- The **cache-yaml trick** (Section 5.7) which is genuinely undocumented
+  and saves hours of re-uploads.
+- An open path for **Phase 2-6 work** (CLI, server, converter, release)
+  that anyone can extend.
+
+**Not yet useful:**
+
+- The runtime is not faster than CPU OSS routes (Ollama, llama.cpp) on
+  the same model size. Until the configuration is properly tuned —
+  `cpu-mask`, `n-threads`, possibly a different shard split — recommending
+  hexrun for raw throughput is dishonest.
+- Energy efficiency is theoretically better but we have not measured it.
+- Phi 3.5 Mini (3.8B) likely runs ~2× faster but we haven't bench'd it.
+
+**The realistic contribution to the wider Windows ARM ecosystem:**
+
+We have not made the chip faster. We have made the chip *accessible* to
+the open ecosystem. Until tonight, "use the NPU on your Snapdragon
+laptop for general LLM inference" required either (a) employment at
+Qualcomm or Microsoft, (b) a closed-source runtime like NexaSDK, or
+(c) a half-day of papercut diagnosis. After tonight, anyone with a free
+Qualcomm dev account and a Saturday can land a working bundle and a
+working Rust runtime. That's a step change in **accessibility**, not in
+**throughput**.
+
+Whether that becomes a *speed* contribution depends on the next
+several phases. The fastest path forward is probably:
+
+1. Tune `cpu-mask`/`n-threads` and re-bench. Plausibly worth 2-3×.
+2. Try Phi 3.5 Mini (smaller, fewer shards). Plausibly worth another 2×.
+3. Compare a fewer-shard recompile (4-shard or 2-shard) once Qualcomm's
+   tooling supports it. Could be substantial if shard transitions are
+   the bottleneck.
+4. Profile what the NPU is *actually* doing per token (`QNN_LOG_LEVEL=PROFILE`).
+   We may discover ops falling back to CPU silently.
+
+If any of those produce a clearly faster result than CPU on the same
+model, the contribution becomes "first open path to use the NPU's
+actual performance advantage." If none of them do, the contribution
+stays at "first open path to use the NPU at all," which is still real
+but less of a headline.
+
+We promise to publish whatever we find, including null results.
 
 ## What we did NOT solve
 

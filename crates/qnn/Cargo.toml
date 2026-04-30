@@ -20,3 +20,7 @@ tracing-subscriber = { workspace = true }
 [[example]]
 name = "qwen-genie"
 path = "examples/qwen-genie.rs"
+
+[[example]]
+name = "qwen-bench"
+path = "examples/qwen-bench.rs"

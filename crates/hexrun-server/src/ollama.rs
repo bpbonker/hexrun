@@ -30,8 +30,11 @@ use crate::ServerState;
 pub fn routes() -> Router<ServerState> {
     Router::new()
         .route("/api/tags", get(api_tags))
+        .route("/api/version", get(api_version))
         .route("/api/generate", post(api_generate))
         .route("/api/chat", post(api_chat))
+        .route("/api/show", post(api_show))
+        .route("/api/delete", post(api_delete))
 }
 
 #[derive(Serialize)]
@@ -48,9 +51,12 @@ struct TagModel {
 }
 
 async fn api_tags(State(state): State<ServerState>) -> Json<TagsResponse> {
+    // Ollama's `/api/tags` returns `<name>:<tag>` rather than a bare
+    // name. Open WebUI and the `ollama` CLI rely on the `:latest`
+    // suffix when matching what the user typed.
     let models = match state.model_name {
         Some(name) => vec![TagModel {
-            name,
+            name: format!("{name}:latest"),
             modified_at: now_iso8601(),
             size: 0,
             digest: String::new(),
@@ -58,6 +64,201 @@ async fn api_tags(State(state): State<ServerState>) -> Json<TagsResponse> {
         None => vec![],
     };
     Json(TagsResponse { models })
+}
+
+async fn api_version() -> Json<serde_json::Value> {
+    Json(serde_json::json!({
+        "version": env!("CARGO_PKG_VERSION"),
+    }))
+}
+
+#[derive(Deserialize)]
+struct ShowRequest {
+    #[serde(default)]
+    name: Option<String>,
+    #[serde(default)]
+    model: Option<String>,
+}
+
+async fn api_show(
+    State(state): State<ServerState>,
+    Json(req): Json<ShowRequest>,
+) -> Response {
+    let requested = match req.name.or(req.model) {
+        Some(n) => n,
+        None => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"error": "request must include 'name' or 'model'"})),
+            )
+                .into_response();
+        }
+    };
+    let bare = crate::strip_model_tag(&requested).to_string();
+
+    // Prefer the in-memory engine's manifest when the requested model
+    // matches what's loaded — saves a disk read and stays consistent
+    // with what the running server is actually serving.
+    let manifest = if state.model_name.as_deref() == Some(bare.as_str()) {
+        state.engine.as_ref().map(|e| e.manifest().clone())
+    } else {
+        None
+    };
+
+    // Fall back to disk: any cached model under the registry's default
+    // cache dir is `/api/show`-able even if it isn't loaded.
+    let manifest = manifest.or_else(|| {
+        let dir = hexrun_registry::default_cache_dir().join(&bare);
+        let path = dir.join("hexrun.json");
+        hexrun_core::Manifest::read(&path).ok()
+    });
+
+    let manifest = match manifest {
+        Some(m) => m,
+        None => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({
+                    "error": format!("model {bare:?} not found in cache"),
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    // Map our manifest into Ollama's `/api/show` JSON shape. The
+    // `details.parameter_size` and `details.quantization_level` fields
+    // are the ones Open WebUI surfaces in its model card.
+    let template = manifest
+        .chat_template
+        .as_ref()
+        .map(|t| t.template.clone())
+        .unwrap_or_default();
+    let system = manifest
+        .chat_template
+        .as_ref()
+        .map(|t| t.system_prompt.clone())
+        .unwrap_or_default();
+    let parameter_size = parameter_size_hint(&manifest.arch, &manifest.name);
+    let quant_label = match manifest.quant {
+        hexrun_core::Quant::Int8 => "INT8",
+        hexrun_core::Quant::Int8WInt16A => "INT8(W)/INT16(A)",
+        hexrun_core::Quant::W4A16 => "W4A16",
+        hexrun_core::Quant::W8A16 => "W8A16",
+        hexrun_core::Quant::Int4 => "INT4",
+        hexrun_core::Quant::Fp16 => "FP16",
+    };
+    Json(serde_json::json!({
+        "license": "see hexrun and bundle license files",
+        "modelfile": format!(
+            "# hexrun bundle\nFROM {name}\nQNN_SDK {sdk}\nCONTEXT {ctx}\n",
+            name = manifest.name,
+            sdk = manifest.qnn_sdk,
+            ctx = manifest.context,
+        ),
+        "parameters": format!("context {}", manifest.context),
+        "template": template,
+        "system": system,
+        "details": {
+            "format": "qnn-genie-bundle",
+            "family": manifest.arch,
+            "families": [manifest.arch.clone()],
+            "parameter_size": parameter_size,
+            "quantization_level": quant_label,
+        },
+        "model_info": {
+            "general.architecture": manifest.arch,
+            "general.parameter_count": parameter_size,
+            "general.quantization_level": quant_label,
+            "qnn.sdk_version": manifest.qnn_sdk,
+            "hexrun.context": manifest.context,
+            "hexrun.vocab": manifest.vocab,
+        },
+    }))
+    .into_response()
+}
+
+#[derive(Deserialize)]
+struct DeleteRequest {
+    #[serde(default)]
+    name: Option<String>,
+    #[serde(default)]
+    model: Option<String>,
+}
+
+async fn api_delete(
+    State(state): State<ServerState>,
+    Json(req): Json<DeleteRequest>,
+) -> Response {
+    let requested = match req.name.or(req.model) {
+        Some(n) => n,
+        None => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"error": "request must include 'name' or 'model'"})),
+            )
+                .into_response();
+        }
+    };
+    let bare = crate::strip_model_tag(&requested).to_string();
+
+    // Refuse to remove the model that's currently loaded in this
+    // server — the live `Engine` holds open file handles and dropping
+    // its on-disk backing store mid-flight would corrupt the running
+    // dialog. Clients should restart the server first.
+    if state.model_name.as_deref() == Some(bare.as_str()) {
+        return (
+            StatusCode::CONFLICT,
+            Json(serde_json::json!({
+                "error": format!(
+                    "{bare:?} is currently loaded by this server; restart hexrun serve before deleting"
+                ),
+            })),
+        )
+            .into_response();
+    }
+
+    match hexrun_registry::remove_local(&bare) {
+        Ok(removed) => {
+            info!(name = %bare, path = %removed.display(), "ollama /api/delete");
+            (StatusCode::OK, Json(serde_json::json!({"status": "deleted"}))).into_response()
+        }
+        Err(hexrun_registry::RegistryError::Io { source, .. })
+            if source.kind() == std::io::ErrorKind::NotFound =>
+        {
+            (
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({"error": format!("model {bare:?} not found")})),
+            )
+                .into_response()
+        }
+        Err(e) => {
+            error!(error = %e, name = %bare, "ollama /api/delete failed");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"error": e.to_string()})),
+            )
+                .into_response()
+        }
+    }
+}
+
+/// Lightweight model-size hint for `/api/show`. Pulled from the bundle
+/// name when possible (e.g. "phi-3.5-mini" → "3.8B"; "qwen-2-5-7b" →
+/// "7B"). Falls back to "unknown" so we never lie.
+fn parameter_size_hint(_arch: &str, name: &str) -> String {
+    let lower = name.to_ascii_lowercase();
+    if lower.contains("phi-3.5-mini") || lower.contains("phi3.5-mini") {
+        "3.8B".to_string()
+    } else if lower.contains("8b") || lower.contains("-8-") {
+        "8B".to_string()
+    } else if lower.contains("7b") || lower.contains("-7-") {
+        "7B".to_string()
+    } else if lower.contains("3b") || lower.contains("-3-") {
+        "3B".to_string()
+    } else {
+        "unknown".to_string()
+    }
 }
 
 #[derive(Deserialize)]

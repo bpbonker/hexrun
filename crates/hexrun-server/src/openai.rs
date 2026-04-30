@@ -51,12 +51,26 @@ struct ModelObject {
 async fn list_models(State(state): State<ServerState>) -> Json<ModelsResponse> {
     let created = unix_now();
     let data = match state.model_name {
-        Some(name) => vec![ModelObject {
-            id: name,
-            object: "model",
-            created,
-            owned_by: "hexrun",
-        }],
+        Some(name) => {
+            // Advertise both the bare name and the `:latest`-tagged form.
+            // OpenAI clients want the bare name; Ollama-aware UIs probing
+            // the OpenAI surface (Open WebUI's compatibility mode) want
+            // the tagged form.
+            vec![
+                ModelObject {
+                    id: name.clone(),
+                    object: "model",
+                    created,
+                    owned_by: "hexrun",
+                },
+                ModelObject {
+                    id: format!("{name}:latest"),
+                    object: "model",
+                    created,
+                    owned_by: "hexrun",
+                },
+            ]
+        }
         None => vec![],
     };
     Json(ModelsResponse {

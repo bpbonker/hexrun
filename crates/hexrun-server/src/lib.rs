@@ -159,10 +159,26 @@ async fn root_index() -> Json<serde_json::Value> {
         "name": "hexrun",
         "endpoints": {
             "openai": ["GET /v1/models", "POST /v1/chat/completions"],
-            "ollama": ["GET /api/tags", "POST /api/generate", "POST /api/chat"],
+            "ollama": [
+                "GET /api/tags", "GET /api/version",
+                "POST /api/generate", "POST /api/chat",
+                "POST /api/show", "POST /api/delete",
+            ],
             "health": ["GET /healthz"],
         },
     }))
+}
+
+/// Strip a trailing `":latest"` (or any tag) from an Ollama-style model
+/// reference like `phi-3.5-mini:latest`.
+///
+/// hexrun does not version models the way Ollama does — each pulled
+/// bundle is the only copy. Ollama clients (Open WebUI, the `ollama`
+/// CLI) request models by `<name>:<tag>` and default the tag to
+/// `latest`. We treat any tag as an alias for the bare name and serve
+/// whatever is loaded.
+pub fn strip_model_tag(name: &str) -> &str {
+    name.split(':').next().unwrap_or(name)
 }
 
 /// Run the HTTP server until shutdown.

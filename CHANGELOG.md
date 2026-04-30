@@ -105,6 +105,26 @@ All notable changes to hexrun will be documented here. Format follows
   `Win32_Battery.DischargeRate` at 2 Hz on battery). Methodology and
   caveats in `docs/benchmarks.md`.
 
+### Added — Ollama parity
+
+- `GET /api/version` returning the running hexrun version.
+- `POST /api/show` returning Ollama-shaped model info
+  (`details.family`, `details.parameter_size`,
+  `details.quantization_level`, `template`, `system`, plus a
+  `model_info` block with QNN SDK version and context length).
+- `POST /api/delete` removing a cached model from disk; refuses with
+  HTTP 409 if the named model is the one this server has loaded.
+- `<name>:latest` (and any `<name>:<tag>`) is now accepted everywhere a
+  model name is — `hexrun run`, `hexrun show`, `hexrun bench`,
+  `/v1/chat/completions`, `/api/generate`, `/api/chat`, `/api/show`,
+  `/api/delete`. `/v1/models` advertises both the bare and tagged
+  forms; `/api/tags` advertises the `:latest`-tagged form to match
+  Ollama clients' expectations.
+- `hexrun ps` now actually does something: probes `GET /healthz` on
+  `--addr` (default `127.0.0.1:11435`) and prints the loaded model,
+  uptime, auth state, and version. Optional `--auth-token` for
+  servers running with bearer-token auth.
+
 ### Notes
 
 - `qnn-sys` and `qnn` crates are excluded from `default-members` until

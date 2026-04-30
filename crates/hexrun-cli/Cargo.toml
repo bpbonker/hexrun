@@ -19,6 +19,8 @@ tracing-subscriber = { workspace = true }
 tokio = { workspace = true }
 clap = { workspace = true }
 indicatif = { workspace = true }
+reqwest = { workspace = true }
+serde_json = { workspace = true }
 hexrun-core = { path = "../hexrun-core", features = ["genie"] }
 hexrun-registry = { path = "../hexrun-registry" }
 hexrun-server = { path = "../hexrun-server" }

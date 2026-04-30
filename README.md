@@ -50,6 +50,7 @@ full operational state.
 | `hexrun bench <name>` | Warm-query benchmark; per-prompt + aggregate tokens/sec. |
 | `hexrun serve --model <name>` | OpenAI- and Ollama-compatible HTTP server. SSE streaming, CORS, optional bearer-token auth. |
 | `hexrun rm <name>` | Delete a cached model. |
+| `hexrun ps` | Probe a running `hexrun serve` and print model + uptime + auth state. |
 | `hexrun version` | Print hexrun, libGenie, and QAIRT SDK versions. |
 
 ## Why this exists
@@ -149,8 +150,13 @@ require `Authorization: Bearer <TOKEN>` on `/v1/*` and `/api/*`.
 Endpoints:
 
 - OpenAI: `GET /v1/models`, `POST /v1/chat/completions` (blocking + SSE)
-- Ollama: `GET /api/tags`, `POST /api/generate`, `POST /api/chat` (blocking + NDJSON)
+- Ollama: `GET /api/tags`, `GET /api/version`, `POST /api/generate`,
+  `POST /api/chat` (blocking + NDJSON), `POST /api/show`,
+  `POST /api/delete`
 - Health: `GET /healthz` (returns JSON with model, uptime, version)
+
+Ollama-style `<name>:latest` references work everywhere — the CLI, the
+server, and `hexrun ps` all strip the tag and serve the bare name.
 
 CORS is permissive so browser-based clients (Open WebUI, custom UIs) can
 hit the server cross-origin. Concurrent requests beyond one are rejected

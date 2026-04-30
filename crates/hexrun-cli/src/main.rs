@@ -46,8 +46,16 @@ enum Cmd {
     },
     /// Print versions of hexrun, libGenie, and the QAIRT SDK in a single shot
     Version,
-    /// List in-flight sessions on a running `hexrun serve` (Phase 4)
-    Ps,
+    /// Probe a running `hexrun serve` and report what model it has loaded.
+    /// Connects to GET /healthz on `--addr` (default 127.0.0.1:11435).
+    Ps {
+        /// host:port of the running hexrun serve.
+        #[arg(long, default_value = "127.0.0.1:11435")]
+        addr: String,
+        /// Bearer token, if the target server was started with --auth-token.
+        #[arg(long, value_name = "TOKEN")]
+        auth_token: Option<String>,
+    },
     /// Run a fixed-prompt warm-query benchmark against a locally cached model
     Bench {
         /// Model name (e.g. "phi-3.5-mini") or absolute path to a model directory
@@ -124,9 +132,7 @@ async fn main() -> Result<()> {
             repeats,
             skip_first,
         } => bench_model(&model, prompt.as_deref(), repeats, skip_first)?,
-        Cmd::Ps => {
-            println!("ps: (Phase 4 — not yet implemented)");
-        }
+        Cmd::Ps { addr, auth_token } => probe_ps(&addr, auth_token.as_deref()).await?,
         Cmd::Serve {
             model,
             bind,
@@ -211,30 +217,31 @@ async fn main() -> Result<()> {
 ///   1. If the identifier is an absolute path that's an existing directory, use it as-is.
 ///   2. If `HEXRUN_MODELS_DIR` is set, look for `$HEXRUN_MODELS_DIR/<name>`.
 ///   3. Default cache dir: `%LOCALAPPDATA%\hexrun\models\<name>`.
+///
+/// Accepts Ollama-style `<name>:<tag>` references (e.g.
+/// `phi-3.5-mini:latest`). The tag is stripped before resolution —
+/// hexrun does not version cached bundles.
 fn resolve_model_dir(model: &str) -> Result<PathBuf> {
-    let p = PathBuf::from(model);
+    let bare = model.split(':').next().unwrap_or(model);
+    let p = PathBuf::from(bare);
     if p.is_absolute() && p.is_dir() {
         return Ok(p);
     }
     if let Some(base) = env::var_os("HEXRUN_MODELS_DIR") {
-        let candidate = PathBuf::from(base).join(model);
+        let candidate = PathBuf::from(base).join(bare);
         if candidate.is_dir() {
             return Ok(candidate);
         }
     }
     if let Some(base) = env::var_os("LOCALAPPDATA") {
-        let candidate = PathBuf::from(base)
-            .join("hexrun")
-            .join("models")
-            .join(model);
+        let candidate = PathBuf::from(base).join("hexrun").join("models").join(bare);
         if candidate.is_dir() {
             return Ok(candidate);
         }
     }
     Err(anyhow!(
-        "model {:?} not found. Set HEXRUN_MODELS_DIR to a directory containing a {model:?} \
+        "model {bare:?} not found. Set HEXRUN_MODELS_DIR to a directory containing a {bare:?} \
          subfolder with a hexrun.json, or use an absolute path.",
-        model
     ))
 }
 
@@ -413,6 +420,84 @@ fn remove_model(name: &str) -> Result<()> {
     let removed = hexrun_registry::remove_local(name)?;
     println!("removed {}", removed.display());
     Ok(())
+}
+
+async fn probe_ps(addr: &str, auth_token: Option<&str>) -> Result<()> {
+    // /healthz is intentionally unauthenticated — clients can probe
+    // server identity without holding a token. Auth-token support is
+    // here for future endpoints we may surface (e.g. /api/ps once the
+    // server gains a sessions list).
+    let url = format!("http://{addr}/healthz");
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(2))
+        .build()
+        .context("building HTTP client")?;
+    let mut req = client.get(&url);
+    if let Some(tok) = auth_token {
+        req = req.bearer_auth(tok);
+    }
+    let resp = match req.send().await {
+        Ok(r) => r,
+        Err(e) => {
+            println!("no hexrun serve responding at {addr} ({e})");
+            return Ok(());
+        }
+    };
+    let status = resp.status();
+    let bytes = match resp.bytes().await {
+        Ok(b) => b,
+        Err(e) => {
+            println!("hexrun serve at {addr} responded {status} but the body could not be read ({e})");
+            return Ok(());
+        }
+    };
+    let body: serde_json::Value = match serde_json::from_slice(&bytes) {
+        Ok(v) => v,
+        Err(e) => {
+            println!("hexrun serve at {addr} responded {status} but the body was not JSON ({e})");
+            return Ok(());
+        }
+    };
+    let model = body
+        .get("model")
+        .and_then(|v| v.as_str())
+        .unwrap_or("(none loaded)");
+    let uptime = body
+        .get("uptime_seconds")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    let auth_on = body
+        .get("auth")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let version = body
+        .get("version")
+        .and_then(|v| v.as_str())
+        .unwrap_or("?");
+    let server_status = body
+        .get("status")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown");
+    println!("hexrun serve at http://{addr}");
+    println!("  status:    {server_status}");
+    println!("  model:     {model}");
+    println!("  uptime:    {}", format_uptime(uptime));
+    println!("  auth:      {}", if auth_on { "bearer-token" } else { "none" });
+    println!("  version:   {version}");
+    Ok(())
+}
+
+fn format_uptime(secs: u64) -> String {
+    let h = secs / 3600;
+    let m = (secs % 3600) / 60;
+    let s = secs % 60;
+    if h > 0 {
+        format!("{h}h {m}m {s}s")
+    } else if m > 0 {
+        format!("{m}m {s}s")
+    } else {
+        format!("{s}s")
+    }
 }
 
 fn print_versions() -> Result<()> {

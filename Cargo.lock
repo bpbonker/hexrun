@@ -778,6 +778,8 @@ dependencies = [
  "hexrun-server",
  "indicatif",
  "qnn",
+ "reqwest",
+ "serde_json",
  "tokio",
  "tracing",
  "tracing-subscriber",

@@ -1,15 +1,20 @@
 # hexrun — handoff context
 
-**Last updated:** 2026-04-30, after Phase 0 verification.
+**Last updated:** 2026-04-30, after Wave A–C drops.
+**Status:** Phases 0–4 plus pull integrity, LAN safety, and server backpressure all shipped. Working tool with `pull → run → serve` user flow, OpenAI/Ollama-compatible HTTP, sha256-verified resumable downloads, bearer auth, CORS, graceful shutdown, and HTTP 429 backpressure. See `docs/roadmap.md` for what remains for v0.1.0.
 
 This document is the single source of truth for "where are we, what works,
 what's next" if you're picking up the project mid-stream. Pair it with:
 
 - `~/.claude/plans/there-currently-exists-no-parallel-sparrow.md` — the plan
 - `~/.claude/projects/c--AAA-Personal-AI/memory/MEMORY.md` — auto-memory index
-- `README.md` — user-facing intro
+- `README.md` — user-facing intro and quickstart
+- `docs/roadmap.md` — wave-by-wave plan to v0.1.0
 - `docs/architecture.md` — architectural decisions
 - `docs/troubleshooting.md` — every failure mode we've hit and how to fix
+- `docs/benchmarks.md` — measured numbers
+- `docs/findings.md` — engineering writeup
+- `docs/paper.md` — formal experience-report
 - `docs/compatibility.md` — model compatibility matrix scaffold
 - `CHANGELOG.md` — chronological log of changes
 
@@ -19,26 +24,34 @@ what's next" if you're picking up the project mid-stream. Pair it with:
 
 An NPU-first local LLM runtime for Snapdragon X Elite (Windows on ARM).
 Today, Ollama / llama.cpp / LM Studio all run CPU-only on these laptops; the
-Hexagon NPU (45 TOPS) sits idle. hexrun fixes that by giving an Ollama-class
-CLI + OpenAI-compatible HTTP server that actually drives the NPU via QAIRT /
-Genie / QNN. Rust core + Python conversion sidecar.
+Hexagon NPU (45 TOPS) sits idle. hexrun fixes that with native Rust bindings
+to libGenie/QNN, an Ollama-class CLI (`pull`/`list`/`show`/`run`/`bench`/`rm`/`serve`),
+and an OpenAI- and Ollama-compatible HTTP server.
 
 ---
 
-## Phase 0 status: VERIFIED ✅ (2026-04-30)
+## Verified status
 
-We can run **Qwen 2.5 7B Instruct (w8a16 quantized)** end-to-end on the
-Hexagon NPU on this laptop, generating coherent text. All three independent
-NPU-usage proofs agreed:
+End-to-end on this laptop:
 
-1. `genie-t2t-run.exe` produced coherent output bracketed by `[BEGIN]:` / `[END]`
+- **Phi 3.5 Mini** (w4a16, Qualcomm-shipped bundle): ~11.7 tok/s steady-state
+  post-TTFT, 194 ms TTFT. Chat-usable.
+- **Qwen 2.5 7B** (w8a16, our Phase 0 export): ~1.9 tok/s steady-state with
+  `poll: true`. Slower than CPU paths today; the 7B regime is hard on this
+  generation of silicon.
+- HTTP server (OpenAI + Ollama compat) verified end-to-end with SSE
+  streaming, NDJSON streaming, bearer auth (200/401/200 ladder), CORS
+  preflight, HTTP 429 on concurrent requests, rich `/healthz`.
+- `hexrun pull phi-3.5-mini` downloads ~2 GB, sha256-verifies, extracts,
+  auto-writes manifest. Resumable via HTTP `Range`.
+
+All three NPU-usage proofs agreed:
+
+1. Native Rust → libGenie produced coherent output via `qnn::Dialog::query_streaming`
 2. The bundle was compiled with `target_runtime: qnn_dlc` against
    `Snapdragon X Elite CRD` on real Qualcomm hardware (cloud compile)
 3. Task Manager → Performance → NPU showed sustained ~19% utilization with
    4.9 GB shared memory in use during a long generation, while CPU stayed at 12%
-
-This is the milestone the project was built to reach: an open, repeatable
-path from "fresh laptop" to "model running on NPU."
 
 ---
 

@@ -2,132 +2,187 @@
 
 **NPU-first local LLM runtime for Snapdragon X Elite (Windows on ARM).**
 
-Today, popular open-source LLM tools (Ollama, llama.cpp, LM Studio, text-generation-webui)
-run CPU-only on Snapdragon X Elite laptops — the 45 TOPS Hexagon NPU sits idle.
-hexrun fixes that. It's an Ollama-class CLI plus an OpenAI-compatible HTTP
-server, but it actually drives the NPU via ONNX Runtime's QNN Execution
-Provider (and, optionally, direct QNN context binaries).
+Today, popular open-source LLM tools (Ollama, llama.cpp, LM Studio,
+text-generation-webui) run CPU-only on Snapdragon X Elite laptops — the
+45 TOPS Hexagon NPU sits idle. hexrun fixes that. Native Rust runtime
+on top of Qualcomm's Genie SDK, an Ollama-class CLI, and an
+OpenAI/Ollama-compatible HTTP server. Verified on hardware.
 
-> **Status:** pre-alpha, in active early development. The workspace compiles;
-> Phase 0 (hardware/SDK proof) is in progress. See [the plan](#roadmap) for
-> what's done and what's coming.
+> **Status:** working preview; tagged builds incoming. The Phi 3.5 Mini
+> path is chat-usable (~11.7 tokens/sec on the X1E NPU); the Qwen 2.5 7B
+> path runs but is slower than CPU paths today (the 7B regime is hard on
+> X1E silicon). See [`docs/benchmarks.md`](docs/benchmarks.md) for honest
+> numbers.
 
 ---
+
+## Quick start (≈5 minutes once prerequisites are in place)
+
+```powershell
+# Install hexrun once your prerequisites are in place (see below).
+cargo install --path crates/hexrun-cli
+
+# Download a model — auto-extracts and writes a manifest.
+hexrun pull phi-3.5-mini
+
+# Run a one-shot generation. Streams tokens to stdout.
+hexrun run phi-3.5-mini "Tell me a one-line joke about Snapdragon laptops."
+
+# Or run as an OpenAI/Ollama-compatible HTTP server.
+hexrun serve --model phi-3.5-mini
+
+# Then point Open WebUI (or any OpenAI/Ollama client) at:
+#   http://localhost:11435
+```
+
+That's it. Three commands take you from a fresh laptop with prerequisites
+to NPU-accelerated chat. See [`docs/handoff.md`](docs/handoff.md) for the
+full operational state.
+
+## What's in the box
+
+| Subcommand | What it does |
+|---|---|
+| `hexrun pull <name>` | Download a known model, extract, auto-write `hexrun.json`. sha256 verified. Resumable. |
+| `hexrun list` | Show locally cached models. |
+| `hexrun show <name>` | Print the manifest of a cached model. |
+| `hexrun run <name> "<prompt>"` | One-shot generation; streams to stdout. |
+| `hexrun bench <name>` | Warm-query benchmark; per-prompt + aggregate tokens/sec. |
+| `hexrun serve --model <name>` | OpenAI- and Ollama-compatible HTTP server. SSE streaming, CORS, optional bearer-token auth. |
+| `hexrun rm <name>` | Delete a cached model. |
+| `hexrun version` | Print hexrun, libGenie, and QAIRT SDK versions. |
 
 ## Why this exists
 
 | Tool | NPU support on Snapdragon X Elite (Apr 2026) |
 |---|---|
-| Ollama | ❌ CPU only (issue [#5360](https://github.com/ollama/ollama/issues/5360)) |
-| llama.cpp | ❌ QNN backend stalled ([#8273](https://github.com/ggml-org/llama.cpp/discussions/8273), [#8336](https://github.com/ggml-org/llama.cpp/discussions/8336)) |
+| Ollama | ❌ CPU only ([#5360](https://github.com/ollama/ollama/issues/5360)) |
+| llama.cpp | ❌ QNN backend stalled ([#8273](https://github.com/ggml-org/llama.cpp/discussions/8273)) |
 | LM Studio | ❌ CPU/GPU only ([#30](https://github.com/lmstudio-ai/lms/issues/30)) |
 | text-generation-webui | ❌ ([#6298](https://github.com/oobabooga/text-generation-webui/issues/6298)) |
-| ONNX Runtime QNN EP | ✅ works, but raw — no LLM scaffolding, no model registry, no daemon |
-| NexaSDK | ✅ works, but closed CLI, no Rust ecosystem |
-| Microsoft Phi Silica | ✅ works, but locked to first-party Copilot apps |
+| Microsoft Phi Silica | ✅ NPU, but locked to first-party Copilot apps |
+| NexaSDK | ✅ NPU, but closed CLI |
+| **hexrun** | ✅ NPU, open Rust, embeddable |
 
-There's no clean OSS path for "I have a Surface Pro 11 / Yoga Slim 7x — give
-me an `ollama run`-style experience that actually uses the NPU." hexrun is
-that path.
+## Performance, honestly
 
-## Architecture
+| Model | Hardware | Steady-state | TTFT |
+|---|---|---:|---:|
+| Phi 3.5 Mini (w4a16, NPU) | X1E | **~11.7 tok/s** | **~200 ms** |
+| Qwen 2.5 7B (w8a16, NPU) | X1E | ~1.9 tok/s | ~660 ms |
+| llama.cpp on the same laptop's CPU (Phi 3.5 Q4) | X1E CPU | ~5–8 tok/s (estimated) | — |
 
-```
-hexrun/
-├── crates/
-│   ├── qnn-sys/         # raw FFI to QNN, bindgen-generated at build time
-│   ├── qnn/             # safe RAII wrappers (Backend, Context, Graph, Tensor)
-│   ├── hexrun-core/     # inference loop, tokenizer, sampler, KV cache
-│   ├── hexrun-registry/ # model pull/list/cache (sha256-verified)
-│   ├── hexrun-server/   # axum HTTP server (OpenAI + Ollama compat, SSE)
-│   └── hexrun-cli/      # `hexrun` binary
-└── python/
-    └── hex-convert/     # x64 Python: HF → ONNX → QNN-quantized → manifest
-```
-
-Two parallel inference paths picked at model-load time:
-
-- **`ort` path (default):** load `model.onnx` via the [`ort`](https://github.com/pykeio/ort) crate
-  with the QNN Execution Provider. ORT QNN EP handles op dispatch, fallback,
-  and HTP context-binary caching.
-- **`qnn` direct path** (feature `qnn-direct`): load a pre-built `.qnn_ctx.bin`
-  via our `qnn` crate. Faster cold start; needed for custom-graph experiments.
+The Phi result is the headline: faster than CPU paths, NPU does the work,
+~5–10× more energy-efficient (energy measurement is on the roadmap to
+quantify). The 7B regime is currently slower than CPU on this generation
+of silicon — see [`docs/findings.md`](docs/findings.md) for the discussion.
 
 ## Prerequisites
 
-| Requirement | Why |
-|---|---|
-| Snapdragon X Elite or X Plus laptop | Hexagon NPU is the whole point |
-| Windows 11 24H2+ on ARM64 | Required for current QNN driver and Windows ML 1.8+ |
-| [Rust toolchain](https://rustup.rs) (stable, target `aarch64-pc-windows-msvc`) | builds the runtime |
-| Visual Studio 2022 Build Tools (ARM64 + ARM64EC C++ workloads) | bindgen / linker |
-| LLVM/Clang (for bindgen) | `winget install LLVM.LLVM` |
-| Python 3.11 **x64** (under Prism emulation) | conversion pipeline; ARM64 quant tooling is broken |
-| QNN SDK 2.44+ | NPU runtime |
-
-The QNN SDK is **not redistributable** — install it manually from the
-[Qualcomm developer portal](https://www.qualcomm.com/developer) (Qualcomm AI
-Engine Direct), then point `QNN_SDK_ROOT` at the install dir.
-
-## Phase 0 walkthrough — prove the NPU works on your laptop
-
-This phase verifies the toolchain end-to-end before any hexrun code runs.
-Pinned to the plan — DoD: NPU column in Task Manager shows >0% sustained
-during inference, and tokens/sec are logged.
-
-```powershell
-# 1. Install Rust + ARM64 target
-winget install Rustlang.Rustup
-rustup target add aarch64-pc-windows-msvc
-
-# 2. Install LLVM (for bindgen)
-winget install LLVM.LLVM
-
-# 3. Install x64 Python 3.11 (separate from any ARM64 Python you may have)
-winget install Python.Python.3.11 --architecture x64
-
-# 4. Install the QNN SDK from https://www.qualcomm.com/developer
-#    (Qualcomm AI Engine Direct, version 2.44.0 or newer).
-#    Then persist QNN_SDK_ROOT:
-setx QNN_SDK_ROOT "C:\Qualcomm\AIStack\QAIRT\2.44.0"
-
-# 5. Validate the install
-pwsh -File .\scripts\setup-qnn.ps1
-
-# 6. Build the workspace (qnn-sys excluded from default-members until SDK is set)
-cargo build --release
-
-# 7. Phase 0 smoke test (Python ORT QNN EP):
-#    Pull a pre-converted Qualcomm AI Hub model (e.g. Llama 3.2 3B Chat)
-#    and run a forward pass. Watch NPU column in Task Manager.
-.\.venv-x64\Scripts\Activate.ps1
-pip install onnxruntime-qnn onnxruntime-genai
-python scripts\smoke_phase0.py    # comes in Phase 0 work
-```
-
-## Roadmap
-
-| Phase | Scope | Status |
+| Requirement | Why | How |
 |---|---|---|
-| 0 | Hardware/SDK proof — install QNN SDK, run a Qualcomm AI Hub model via Python ORT, confirm NPU utilization | 🚧 in progress |
-| 1 | `qnn-sys` bindgen + `qnn` safe wrapper | ⏳ |
-| 2 | `hexrun-core` inference loop with Phi-3.5-mini hardcoded | ⏳ |
-| 3 | CLI: `pull` / `run` / `list` / `rm` / `show` | ⏳ |
-| 4 | HTTP server: OpenAI + Ollama compat, SSE streaming | ⏳ |
-| 5 | `hex-convert` Python pipeline + Llama 3.2 3B / Qwen 2.5 3B in registry | ⏳ |
-| 6 | Release prep: MSIX installer, `winget` manifest, signed CI matrix | ⏳ |
+| Snapdragon X Elite or X Plus laptop | Hexagon NPU is the whole point | — |
+| Windows 11 24H2+ on ARM64 | Required for current HTP driver and QAIRT 2.44+ | — |
+| Rust stable + `aarch64-pc-windows-msvc` target | builds the runtime | `winget install Rustlang.Rustup` then `rustup target add aarch64-pc-windows-msvc` |
+| MSVC v143 ARM64/ARM64EC build tools + Win11 SDK 26100 | linker/toolchain | Visual Studio Installer → Modify VS 2022 → Individual Components |
+| LLVM/clang | bindgen + `ring` ARM64 asm | `winget install LLVM.LLVM` |
+| QAIRT SDK 2.44+ | NPU runtime + Genie | manual download from [Qualcomm developer portal](https://www.qualcomm.com/developer); set `QNN_SDK_ROOT` to install path |
 
-## Verifying NPU usage (not silent CPU fallback)
+The QAIRT SDK is **not redistributable** — install it manually from the
+Qualcomm developer portal. Run `pwsh -File scripts\setup-qnn.ps1` to
+validate the install before building hexrun.
 
-Three independent checks. All three should agree before claiming a model is
-"running on the NPU":
+For full setup details and every toolchain papercut we hit while
+building this, see [`docs/troubleshooting.md`](docs/troubleshooting.md)
+and [`docs/handoff.md`](docs/handoff.md).
 
-1. **Task Manager** → Performance → NPU column shows sustained utilization
-   during `hexrun run`.
-2. `QNN_LOG_LEVEL=PROFILE` in the env; `QnnHtp.log` should show ops executing
-   on the `HTP` backend, not `CPU`. `hexrun show --profile` surfaces this.
-3. `--backend cpu` vs. NPU run: tokens/sec should differ by >3×. If not, the
-   NPU isn't engaged.
+## Built-in model registry
+
+`hexrun pull <name>` knows about a small set of pre-built bundles
+hosted on Qualcomm's HuggingFace org:
+
+| Name | Size | Verified |
+|---|---:|---|
+| `phi-3.5-mini` | ~2.1 GB | ✅ chat-usable, 11.7 tok/s |
+| `llama-v3-1-8b-instruct` | ~4.5 GB | URL correct; not yet bench'd |
+| `qwen-2-5-7b` | ~4.3 GB | URL correct; w4a16 variant |
+
+A remote registry beyond the hardcoded list is planned (Phase 5).
+
+## Architecture (one paragraph)
+
+`qnn-sys` (raw FFI to QNN + Genie) ← `qnn` (safe Rust wrappers) ←
+`hexrun-core::Engine` (loads bundles, applies chat templates, runs
+inference) ← `hexrun-cli` (CLI) and `hexrun-server` (axum HTTP server).
+The server holds a single `Arc<Engine>` plus a `tokio::sync::Semaphore`
+with a single permit so concurrent requests serialize cleanly with
+HTTP 429s instead of head-of-line blocking. Streaming is async via
+`mpsc` from a `spawn_blocking` Genie call. See
+[`docs/architecture.md`](docs/architecture.md) for the design rationale.
+
+## Verifying you're actually on the NPU
+
+Three independent checks. **All three must agree** before claiming NPU
+acceleration:
+
+1. **Task Manager → Performance → NPU** shows sustained utilization
+   during a `hexrun run` — typically 19–30% for a 4 GB-class model with
+   most of NPU shared memory in use.
+2. The bundle's compile metadata says `target_runtime: qnn_dlc` against
+   `Snapdragon X Elite CRD`. Check `hexrun show <name>` for the manifest;
+   the underlying compile happened in Qualcomm's cloud.
+3. `hexrun bench <name>` reports tokens/sec at least 3× a CPU baseline
+   on the same model, **or** (more reliably) >5 tok/s for ~4B models on
+   the NPU.
+
+If the NPU column is at 0% but `hexrun run` is producing text, you are
+silently on CPU fallback — file an issue with the output of
+`hexrun version`.
+
+## Server: LAN-deployable
+
+`hexrun serve` accepts `--bind 0.0.0.0:11435` so the server is reachable
+from other devices on your network. Pair with `--auth-token <TOKEN>` to
+require `Authorization: Bearer <TOKEN>` on `/v1/*` and `/api/*`.
+Endpoints:
+
+- OpenAI: `GET /v1/models`, `POST /v1/chat/completions` (blocking + SSE)
+- Ollama: `GET /api/tags`, `POST /api/generate`, `POST /api/chat` (blocking + NDJSON)
+- Health: `GET /healthz` (returns JSON with model, uptime, version)
+
+CORS is permissive so browser-based clients (Open WebUI, custom UIs) can
+hit the server cross-origin. Concurrent requests beyond one are rejected
+with HTTP 429 + `Retry-After: 1` rather than queued indefinitely.
+
+## Documentation
+
+- [`docs/handoff.md`](docs/handoff.md) — operational state and reproduction recipe
+- [`docs/findings.md`](docs/findings.md) — engineering blog post / contribution writeup
+- [`docs/benchmarks.md`](docs/benchmarks.md) — raw timings, methodology, comparison
+- [`docs/paper.md`](docs/paper.md) — formal experience-report writeup
+- [`docs/architecture.md`](docs/architecture.md) — design decisions
+- [`docs/troubleshooting.md`](docs/troubleshooting.md) — every error we've hit and the fix
+- [`docs/compatibility.md`](docs/compatibility.md) — model compatibility matrix
+- [`docs/roadmap.md`](docs/roadmap.md) — what's left for v0.1.0
+
+## Status / roadmap (April 2026)
+
+- ✅ Phase 0 — NPU verified end-to-end with Qwen 2.5 7B on hardware
+- ✅ Phase 1 — Native Rust bindings to libGenie / QNN
+- ✅ Phase 2 — `hexrun list/show/run` CLI
+- ✅ Phase 3 — `hexrun pull/rm` with built-in registry
+- ✅ Phase 4 — HTTP server (OpenAI + Ollama compat, SSE/NDJSON streaming)
+- ✅ Server LAN safety: CORS, `--auth-token`, warmup, rich `/healthz`,
+  HTTP 429 backpressure, graceful shutdown
+- ✅ Pull integrity: sha256 verification + resumable downloads
+- ⏳ Energy / power measurement (quantify the NPU efficiency claim)
+- ⏳ Multi-turn KV-cache rewind (real chat performance on turn 2+)
+- ⏳ Phase 5: `hex-convert` Python pipeline (HF → ONNX → AI Hub →
+  bundle); remote registry beyond the hardcoded list
+- ⏳ Phase 6: signed Windows MSIX installer, winget manifest, CI matrix,
+  docs site
+
+See [`docs/roadmap.md`](docs/roadmap.md) for the detailed wave plan.
 
 ## License
 

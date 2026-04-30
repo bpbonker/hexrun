@@ -188,12 +188,29 @@ impl Drop for Config {
 /// The dialog holds the entire compiled context-binary set in NPU shared
 /// memory for the duration of its lifetime. Drop it to free the NPU
 /// memory.
+///
+/// # Thread-safety
+///
+/// `Dialog` is marked `Send` + `Sync` so it can be held in an `Arc` and
+/// moved between tokio tasks (needed for the HTTP server). Genie does
+/// **not** support concurrent queries on a single dialog handle — callers
+/// who share a `Dialog` across threads must serialize calls (e.g. with a
+/// `Mutex` or `RwLock`). The handle itself is just a pointer to an opaque
+/// C struct that is safe to pass between threads.
 pub struct Dialog {
     handle: sys::GenieDialog_Handle_t,
     /// Held to ensure the config outlives the dialog (Genie may keep
     /// internal references).
     _config: Config,
 }
+
+// SAFETY: GenieDialog_Handle_t is an opaque pointer; Genie itself does not
+// document thread-affinity requirements. Concurrent calls into a single
+// dialog are explicitly *not* safe (Qualcomm's docs imply per-dialog
+// serialization), so the higher-level type *Sync* is correct only when
+// callers serialize via an external lock; that is the contract here.
+unsafe impl Send for Dialog {}
+unsafe impl Sync for Dialog {}
 
 impl Dialog {
     /// Create a dialog from a JSON config string.

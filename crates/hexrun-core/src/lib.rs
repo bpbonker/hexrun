@@ -1,9 +1,12 @@
 //! hexrun inference engine core.
 //!
 //! Two parallel inference paths picked at model-load time:
-//! - `Backend::Ort`: ONNX Runtime with the QNN Execution Provider (default).
-//! - `Backend::QnnDirect`: load a pre-built QNN context binary directly via
-//!   the `qnn` crate. Gated behind the `qnn-direct` feature.
+//! - `Backend::Genie`: load a Genie LLM bundle (compiled context-binary
+//!   shards) and run inference via the Genie C runtime. This is the
+//!   default and currently-supported LLM path on Snapdragon X Elite NPU.
+//!   Gated behind the `genie` feature.
+//! - `Backend::Ort`: ONNX Runtime with the QNN Execution Provider. Reserved
+//!   for non-LLM models and future work.
 //!
 //! Library-side code uses concrete `thiserror` error types; the CLI binary
 //! is the only place `anyhow` lives.
@@ -14,6 +17,6 @@ pub mod engine;
 pub mod manifest;
 pub mod sampler;
 
-pub use engine::{Backend, Engine, EngineConfig, EngineError, GenerationStream};
-pub use manifest::{Manifest, ManifestError, ManifestFiles, Quant};
+pub use engine::{Backend, Engine, EngineConfig, EngineError};
+pub use manifest::{ChatTemplate, Manifest, ManifestError, ManifestFiles, Quant};
 pub use sampler::{sample, SamplerConfig, SamplerError};

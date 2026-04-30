@@ -23,6 +23,13 @@ pub enum Quant {
     /// attention stability on most LLMs).
     #[serde(rename = "int8-w-int16-a")]
     Int8WInt16A,
+    /// 4-bit weights with 16-bit activations (Qualcomm's standard for
+    /// pre-built Snapdragon X Elite LLM bundles).
+    #[serde(rename = "w4a16")]
+    W4A16,
+    /// 8-bit weights with 16-bit activations.
+    #[serde(rename = "w8a16")]
+    W8A16,
     /// 4-bit weights (group-quantized). Smallest footprint; quality varies
     /// by model.
     Int4,
@@ -51,26 +58,60 @@ pub struct Manifest {
     pub qnn_sdk: String,
     /// Files that ship with this model.
     pub files: ManifestFiles,
+    /// Chat-template wrapping for user prompts. Different model families
+    /// (Phi 3 vs. Qwen 2.5 vs. Llama 3) use different wrapping syntaxes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chat_template: Option<ChatTemplate>,
     /// sha256 hex digests for each file referenced under [`Self::files`].
     /// Keyed by the field name (e.g. `"model"`, `"ctx"`, `"tokenizer"`).
     #[serde(default)]
     pub sha256: BTreeMap<String, String>,
 }
 
-/// Files referenced by a manifest. All paths are relative to the model
-/// directory; absolute paths and `..` segments are rejected at validation.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// Files referenced by a manifest. All paths are relative to the directory
+/// containing `hexrun.json`. Absolute paths and `..` segments are rejected
+/// at validation.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ManifestFiles {
-    /// ONNX file (path relative to the manifest's directory).
-    pub model: String,
+    /// ONNX file (path relative to the manifest's directory). Used for
+    /// non-Genie inference paths. Optional — Genie bundles don't need it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
     /// Optional QNN context binary (`*.qnn_ctx.bin`) for fast cold start.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ctx: Option<String>,
     /// HuggingFace-style `tokenizer.json` file.
-    pub tokenizer: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tokenizer: Option<String>,
     /// Optional architecture/runtime config file.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub config: Option<String>,
+    /// Path to a Genie `genie_config.json`. When present, hexrun loads the
+    /// model via the Genie LLM runtime (the LLM-NPU path).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub genie_config: Option<String>,
+}
+
+/// Chat-template configuration. Holds a system-prompt default plus a
+/// format string with `{system}` and `{user}` placeholders.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChatTemplate {
+    /// Default system prompt (substituted into `{system}` in `template`).
+    pub system_prompt: String,
+    /// Format string with `{system}` and `{user}` placeholders. Should
+    /// terminate with the model's "assistant turn starts here" marker so
+    /// generation begins with the assistant's response.
+    pub template: String,
+}
+
+impl ChatTemplate {
+    /// Wrap a user prompt using the template. `{system}` is replaced with
+    /// `self.system_prompt`; `{user}` with the supplied prompt.
+    pub fn wrap(&self, user: &str) -> String {
+        self.template
+            .replace("{system}", &self.system_prompt)
+            .replace("{user}", user)
+    }
 }
 
 /// Errors raised while reading or validating a manifest.
@@ -146,19 +187,40 @@ impl Manifest {
                 self.qnn_sdk
             )));
         }
-        check_safe_relpath("files.model", &self.files.model)?;
-        check_safe_relpath("files.tokenizer", &self.files.tokenizer)?;
+        if let Some(ref m) = self.files.model {
+            check_safe_relpath("files.model", m)?;
+        }
+        if let Some(ref t) = self.files.tokenizer {
+            check_safe_relpath("files.tokenizer", t)?;
+        }
         if let Some(ref ctx) = self.files.ctx {
             check_safe_relpath("files.ctx", ctx)?;
         }
         if let Some(ref cfg) = self.files.config {
             check_safe_relpath("files.config", cfg)?;
         }
+        if let Some(ref gc) = self.files.genie_config {
+            check_safe_relpath("files.genie_config", gc)?;
+        }
+        if self.files.model.is_none() && self.files.genie_config.is_none() {
+            return Err(ManifestError::Invalid(
+                "manifest must specify either files.model (ORT path) \
+                 or files.genie_config (Genie path)"
+                    .into(),
+            ));
+        }
         for (key, hex) in &self.sha256 {
             if !is_sha256_hex(hex) {
                 return Err(ManifestError::Invalid(format!(
                     "sha256[{key}] is not 64 lowercase hex chars"
                 )));
+            }
+        }
+        if let Some(ref t) = self.chat_template {
+            if !t.template.contains("{user}") {
+                return Err(ManifestError::Invalid(
+                    "chat_template.template must contain {user} placeholder".into(),
+                ));
             }
         }
         Ok(())
@@ -257,14 +319,20 @@ mod tests {
             arch: "phi3".into(),
             vocab: 32064,
             context: 4096,
-            quant: Quant::Int8WInt16A,
-            qnn_sdk: "2.44.0".into(),
+            quant: Quant::W4A16,
+            qnn_sdk: "2.45.0".into(),
             files: ManifestFiles {
-                model: "model.onnx".into(),
-                ctx: Some("model.qnn_ctx.bin".into()),
-                tokenizer: "tokenizer.json".into(),
+                model: None,
+                ctx: None,
+                tokenizer: Some("tokenizer.json".into()),
                 config: None,
+                genie_config: Some("bundle/genie_config.json".into()),
             },
+            chat_template: Some(ChatTemplate {
+                system_prompt: "You are a helpful assistant.".into(),
+                template: "<|system|>\n{system}<|end|>\n<|user|>\n{user}<|end|>\n<|assistant|>\n"
+                    .into(),
+            }),
             sha256: BTreeMap::new(),
         }
     }
@@ -276,7 +344,7 @@ mod tests {
         let back: Manifest = serde_json::from_str(&s).unwrap();
         back.validate().unwrap();
         assert_eq!(back.name, m.name);
-        assert_eq!(back.quant, Quant::Int8WInt16A);
+        assert_eq!(back.quant, Quant::W4A16);
     }
 
     #[test]
@@ -296,7 +364,7 @@ mod tests {
     #[test]
     fn rejects_path_traversal() {
         let mut m = good();
-        m.files.tokenizer = "../etc/passwd".into();
+        m.files.tokenizer = Some("../etc/passwd".into());
         let err = m.validate().unwrap_err();
         assert!(matches!(err, ManifestError::Invalid(s) if s.contains("'..'")));
     }
@@ -304,14 +372,14 @@ mod tests {
     #[test]
     fn rejects_absolute_path() {
         let mut m = good();
-        m.files.model = "/abs/model.onnx".into();
+        m.files.genie_config = Some("/abs/genie.json".into());
         assert!(matches!(m.validate(), Err(ManifestError::Invalid(_))));
     }
 
     #[test]
     fn rejects_drive_prefix() {
         let mut m = good();
-        m.files.model = "C:\\abs\\model.onnx".into();
+        m.files.genie_config = Some("C:\\abs\\genie.json".into());
         assert!(matches!(m.validate(), Err(ManifestError::Invalid(_))));
     }
 
@@ -337,6 +405,33 @@ mod tests {
     }
 
     #[test]
+    fn rejects_neither_model_nor_genie_config() {
+        let mut m = good();
+        m.files.genie_config = None;
+        m.files.model = None;
+        assert!(matches!(m.validate(), Err(ManifestError::Invalid(_))));
+    }
+
+    #[test]
+    fn rejects_chat_template_without_user_placeholder() {
+        let mut m = good();
+        m.chat_template = Some(ChatTemplate {
+            system_prompt: "x".into(),
+            template: "no placeholder".into(),
+        });
+        assert!(matches!(m.validate(), Err(ManifestError::Invalid(_))));
+    }
+
+    #[test]
+    fn chat_template_wrap_substitutes_placeholders() {
+        let t = ChatTemplate {
+            system_prompt: "be helpful".into(),
+            template: "[S]{system}[U]{user}[A]".into(),
+        };
+        assert_eq!(t.wrap("hi"), "[S]be helpful[U]hi[A]");
+    }
+
+    #[test]
     fn sdk_compat_major_mismatch_errors() {
         let m = good();
         let err = m.check_sdk_compat("3.0.0").unwrap_err();
@@ -346,13 +441,13 @@ mod tests {
     #[test]
     fn sdk_compat_minor_drift_warns_but_passes() {
         let m = good();
-        m.check_sdk_compat("2.45.1").unwrap();
+        m.check_sdk_compat("2.46.1").unwrap();
     }
 
     #[test]
     fn sdk_compat_patch_drift_silent() {
         let m = good();
-        m.check_sdk_compat("2.44.7").unwrap();
+        m.check_sdk_compat("2.45.7").unwrap();
     }
 
     #[test]

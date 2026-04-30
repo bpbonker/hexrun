@@ -1,13 +1,15 @@
-//! Inference engine: load a model, run a generation loop, stream tokens.
+//! Inference engine: load a model bundle, run a generation loop.
 //!
-//! Phase 2 lands the real ORT QNN EP path. This module establishes the
-//! public surface so dependent crates (registry, server, cli) build now.
+//! When the `genie` feature is enabled, [`Engine`] holds a `qnn::Dialog`
+//! and drives the Hexagon NPU via Qualcomm's Genie LLM runtime. Without
+//! the feature, `Engine::generate` returns [`EngineError::FeatureDisabled`].
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use thiserror::Error;
-use tokio::sync::mpsc;
+#[cfg(feature = "genie")]
+use tracing::debug;
 use tracing::info;
 
 use crate::manifest::{Manifest, ManifestError};
@@ -15,14 +17,12 @@ use crate::manifest::{Manifest, ManifestError};
 /// Inference backend selection.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum Backend {
-    /// Default: ONNX Runtime with the QNN Execution Provider.
+    /// Default for LLMs: Qualcomm Genie LLM runtime.
     #[default]
+    Genie,
+    /// ONNX Runtime via the QNN Execution Provider. For non-LLM models.
     Ort,
-    /// Load a pre-built QNN context binary directly. Feature-gated.
-    #[cfg(feature = "qnn-direct")]
-    QnnDirect,
-    /// Fall back to ORT CPU EP. Useful for the >3× tokens/sec NPU sanity
-    /// check and for environments without the SDK.
+    /// CPU fallback. Useful for smoke tests when the NPU is unavailable.
     Cpu,
 }
 
@@ -33,30 +33,22 @@ pub struct EngineConfig {
     pub model_dir: PathBuf,
     /// Backend to use.
     pub backend: Backend,
-    /// Maximum tokens to generate per call.
+    /// Maximum tokens to generate per call. Currently advisory — Genie
+    /// honours its own internal generation limits via the model config.
     pub max_tokens: usize,
-    /// Sampler temperature.
-    pub temperature: f32,
-    /// Nucleus sampling threshold.
-    pub top_p: f32,
-    /// Top-k pruning (0 = disabled).
-    pub top_k: usize,
 }
 
 impl Default for EngineConfig {
     fn default() -> Self {
         Self {
             model_dir: PathBuf::new(),
-            backend: Backend::Ort,
+            backend: Backend::Genie,
             max_tokens: 512,
-            temperature: 0.7,
-            top_p: 0.95,
-            top_k: 40,
         }
     }
 }
 
-/// Errors that can be raised by the engine.
+/// Errors raised by the engine.
 #[derive(Debug, Error)]
 pub enum EngineError {
     /// Model directory does not exist.
@@ -65,20 +57,35 @@ pub enum EngineError {
     /// Manifest could not be loaded.
     #[error(transparent)]
     Manifest(#[from] ManifestError),
-    /// Inference path not yet implemented (Phase 2).
-    #[error("inference not yet implemented for backend {0:?} (Phase 2)")]
-    NotYetImplemented(Backend),
+    /// Manifest does not declare a Genie bundle (`files.genie_config`).
+    #[error("manifest at {path} has no files.genie_config; cannot run on Genie backend")]
+    NotAGenieBundle {
+        /// Path of the manifest.
+        path: PathBuf,
+    },
+    /// The compiled-in feature for the requested backend is disabled.
+    #[error("backend {0:?} is not available — rebuild hexrun-core with the appropriate feature")]
+    FeatureDisabled(Backend),
+    /// An error from the Genie C runtime.
+    #[cfg(feature = "genie")]
+    #[error(transparent)]
+    Genie(#[from] qnn::GenieError),
 }
 
 /// Loaded inference engine.
 pub struct Engine {
     manifest: Manifest,
     config: EngineConfig,
+    #[cfg(feature = "genie")]
+    dialog: qnn::Dialog,
 }
 
 impl Engine {
-    /// Load a model from a directory containing `hexrun.json` plus the ONNX,
-    /// context-binary, and tokenizer files referenced by the manifest.
+    /// Load a model from a directory containing `hexrun.json`.
+    ///
+    /// On the Genie backend, also opens the bundle's `genie_config.json`
+    /// and creates the Genie dialog (the dialog stays resident in NPU
+    /// shared memory until [`Engine`] is dropped).
     pub fn load(config: EngineConfig) -> Result<Arc<Self>, EngineError> {
         if !config.model_dir.is_dir() {
             return Err(EngineError::ModelDirMissing(config.model_dir.clone()));
@@ -90,9 +97,40 @@ impl Engine {
             arch = %manifest.arch,
             quant = ?manifest.quant,
             qnn_sdk = %manifest.qnn_sdk,
+            backend = ?config.backend,
             "loaded manifest"
         );
-        Ok(Arc::new(Self { manifest, config }))
+
+        match config.backend {
+            Backend::Genie => Self::load_genie(manifest, config),
+            other => Err(EngineError::FeatureDisabled(other)),
+        }
+    }
+
+    #[cfg(feature = "genie")]
+    fn load_genie(manifest: Manifest, config: EngineConfig) -> Result<Arc<Self>, EngineError> {
+        let genie_rel =
+            manifest
+                .files
+                .genie_config
+                .as_ref()
+                .ok_or_else(|| EngineError::NotAGenieBundle {
+                    path: config.model_dir.join("hexrun.json"),
+                })?;
+        let genie_path = config.model_dir.join(genie_rel);
+        debug!(path = %genie_path.display(), "opening Genie config");
+        let dialog = qnn::Dialog::from_config_file(&genie_path)?;
+        Ok(Arc::new(Self {
+            manifest,
+            config,
+            dialog,
+        }))
+    }
+
+    #[cfg(not(feature = "genie"))]
+    #[allow(clippy::needless_pass_by_value)]
+    fn load_genie(_manifest: Manifest, _config: EngineConfig) -> Result<Arc<Self>, EngineError> {
+        Err(EngineError::FeatureDisabled(Backend::Genie))
     }
 
     /// Manifest of the loaded model.
@@ -105,30 +143,49 @@ impl Engine {
         &self.config
     }
 
-    /// Start a generation. Returns a stream of token strings.
+    /// Run a single, blocking query and return the full generated response.
     ///
-    /// Phase 2 will run the ORT QNN EP forward pass + sampler loop and
-    /// feed tokens into the channel.
-    pub async fn generate(&self, _prompt: &str) -> Result<GenerationStream, EngineError> {
-        Err(EngineError::NotYetImplemented(self.config.backend))
+    /// The user prompt is wrapped using the manifest's `chat_template`
+    /// (if present); otherwise it's passed through unchanged.
+    #[cfg(feature = "genie")]
+    pub fn generate(&self, prompt: &str) -> Result<String, EngineError> {
+        let wrapped = match &self.manifest.chat_template {
+            Some(t) => t.wrap(prompt),
+            None => prompt.to_string(),
+        };
+        Ok(self.dialog.query(&wrapped)?)
     }
-}
 
-/// Asynchronous stream of generated tokens.
-pub struct GenerationStream {
-    rx: mpsc::Receiver<String>,
-}
-
-impl GenerationStream {
-    /// Receive the next token, or `None` at end of stream.
-    pub async fn next(&mut self) -> Option<String> {
-        self.rx.recv().await
+    /// Run a query and invoke `callback` for each response chunk.
+    #[cfg(feature = "genie")]
+    pub fn generate_streaming<F>(&self, prompt: &str, mut callback: F) -> Result<(), EngineError>
+    where
+        F: FnMut(&str),
+    {
+        let wrapped = match &self.manifest.chat_template {
+            Some(t) => t.wrap(prompt),
+            None => prompt.to_string(),
+        };
+        self.dialog.query_streaming(&wrapped, |chunk, _code| {
+            callback(chunk);
+        })?;
+        Ok(())
     }
-}
 
-/// Runtime detection of the NPU. Phase 1 wires this to `qnn::Capabilities`.
-pub fn npu_present(_model_dir: &Path) -> bool {
-    false
+    /// Stub implementation when the `genie` feature is off.
+    #[cfg(not(feature = "genie"))]
+    pub fn generate(&self, _prompt: &str) -> Result<String, EngineError> {
+        Err(EngineError::FeatureDisabled(self.config.backend))
+    }
+
+    /// Stub implementation when the `genie` feature is off.
+    #[cfg(not(feature = "genie"))]
+    pub fn generate_streaming<F>(&self, _prompt: &str, _callback: F) -> Result<(), EngineError>
+    where
+        F: FnMut(&str),
+    {
+        Err(EngineError::FeatureDisabled(self.config.backend))
+    }
 }
 
 #[cfg(test)]
@@ -149,7 +206,7 @@ mod tests {
     }
 
     #[test]
-    fn defaults_use_ort_backend() {
-        assert_eq!(EngineConfig::default().backend, Backend::Ort);
+    fn defaults_use_genie_backend() {
+        assert_eq!(EngineConfig::default().backend, Backend::Genie);
     }
 }

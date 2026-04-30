@@ -23,5 +23,7 @@ qnn = { path = "../qnn", optional = true }
 
 [features]
 default = []
-# Enables the qnn-direct backend path (loads .qnn_ctx.bin without ORT).
-qnn-direct = ["dep:qnn"]
+# Enable the Genie (LLM-on-NPU) backend. Off by default so CI can build
+# the workspace without QNN_SDK_ROOT being set (qnn-sys/qnn require it).
+# hexrun-cli and hexrun-server enable this transitively.
+genie = ["dep:qnn"]

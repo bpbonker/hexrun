@@ -111,7 +111,10 @@ fn main() -> anyhow::Result<()> {
         println!("    queries:                    {}", warm.len());
         println!("    avg total per query:        {:.2?}", avg(|r| r.total));
         println!("    avg time-to-first-token:    {:.2?}", avg(|r| r.ttft));
-        println!("    avg generation time:        {:.2?}", avg(|r| r.gen_time));
+        println!(
+            "    avg generation time:        {:.2?}",
+            avg(|r| r.gen_time)
+        );
         println!(
             "    aggregate tok/s (incl ttft): {:.1}",
             total_tokens as f64 / total_secs

@@ -79,13 +79,9 @@ async fn main() -> Result<()> {
 
     let cli = Cli::parse();
     match cli.cmd {
-        Cmd::Pull { model } => {
-            println!("pull: {model} (Phase 3 — not yet implemented)");
-        }
+        Cmd::Pull { model } => pull_model(&model).await?,
         Cmd::List => list_models()?,
-        Cmd::Rm { model } => {
-            println!("rm: {model} (Phase 3 — not yet implemented)");
-        }
+        Cmd::Rm { model } => remove_model(&model)?,
         Cmd::Show { model, profile } => show_model(&model, profile)?,
         Cmd::Run { model, prompt } => {
             let prompt = prompt.join(" ");
@@ -248,6 +244,65 @@ fn show_model(model: &str, profile: bool) -> Result<()> {
         println!();
         println!("(profile flag is reserved for runtime stats — Phase 4 will populate it)");
     }
+    Ok(())
+}
+
+async fn pull_model(name: &str) -> Result<()> {
+    use hexrun_registry::{pull_model as registry_pull, KnownModel, ProgressEvent, KNOWN_MODELS};
+
+    if KnownModel::lookup(name).is_none() {
+        eprintln!("model {name:?} is not in the built-in registry. Known models:");
+        for m in KNOWN_MODELS {
+            eprintln!(
+                "  {} ({} {}, ~{:.1} GB)",
+                m.name,
+                m.arch,
+                m.quant,
+                m.size_estimate_bytes as f64 / 1e9
+            );
+        }
+        return Err(anyhow!("unknown model"));
+    }
+
+    let pb = indicatif::ProgressBar::new(0);
+    pb.set_style(
+        indicatif::ProgressStyle::with_template(
+            "{spinner:.cyan} {msg:30} [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} {bytes_per_sec} eta {eta}",
+        )
+        .unwrap()
+        .progress_chars("=>-"),
+    );
+    pb.set_message(format!("pull {name}"));
+    let pb_clone = pb.clone();
+
+    let model_dir = registry_pull(name, move |evt| match evt {
+        ProgressEvent::Started { total } => {
+            if let Some(t) = total {
+                pb_clone.set_length(t);
+            } else {
+                pb_clone.set_length(0);
+            }
+        }
+        ProgressEvent::Downloaded { bytes } => {
+            pb_clone.set_position(bytes);
+        }
+        ProgressEvent::Extracting => {
+            pb_clone.set_message("extracting".to_string());
+        }
+        ProgressEvent::Done { .. } => {
+            pb_clone.finish_with_message("done");
+        }
+    })
+    .await?;
+
+    println!("\nmodel ready at {}", model_dir.display());
+    println!("verify it: hexrun show {name}\nrun it:    hexrun run {name} \"hello\"");
+    Ok(())
+}
+
+fn remove_model(name: &str) -> Result<()> {
+    let removed = hexrun_registry::remove_local(name)?;
+    println!("removed {}", removed.display());
     Ok(())
 }
 

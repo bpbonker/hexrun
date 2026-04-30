@@ -44,6 +44,8 @@ tower-http = { version = "0.6", features = ["cors", "trace"] }
 reqwest = { version = "0.12", features = ["stream", "rustls-tls"], default-features = false }
 futures = "0.3"
 futures-util = "0.3"
+zip = { version = "2", default-features = false, features = ["deflate", "deflate64"] }
+indicatif = "0.17"
 
 # ML
 ort = { version = "=2.0.0-rc.10", default-features = false, features = ["std", "load-dynamic"] }

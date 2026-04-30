@@ -18,6 +18,7 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 tokio = { workspace = true }
 clap = { workspace = true }
+indicatif = { workspace = true }
 hexrun-core = { path = "../hexrun-core", features = ["genie"] }
 hexrun-registry = { path = "../hexrun-registry" }
 hexrun-server = { path = "../hexrun-server" }

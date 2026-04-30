@@ -583,6 +583,7 @@ fn bench_model(
                 output.push_str(chunk);
             })?;
             let total = started.elapsed();
+            engine.reset_dialog()?;
             let ttft = first_token_at.unwrap_or(total);
             let tokens = approx_token_count(&output);
             let gen_time = total.saturating_sub(ttft);

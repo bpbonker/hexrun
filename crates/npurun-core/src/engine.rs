@@ -260,13 +260,17 @@ impl Engine {
         Ok(())
     }
 
-    /// Reset the dialog's chat state. Drops the KV cache and forces the
-    /// next [`Self::generate_chat_streaming`] call to use
-    /// `SentenceCode::Begin`. Useful when a client signals a fresh
-    /// conversation and you want guaranteed-clean state instead of
-    /// relying on Genie's prefix-mismatch handling.
+    /// Drop the underlying Genie dialog's state. Clears the KV cache and
+    /// forces the next [`Self::generate_chat_streaming`] call to use
+    /// `SentenceCode::Begin`. Call this whenever you want guaranteed-clean
+    /// state instead of relying on Genie's prefix-mismatch handling — when
+    /// a chat client signals a fresh conversation, or between independent
+    /// single-shot [`Self::generate_streaming`] calls in benchmark loops
+    /// (otherwise the prior turn's tokens stay in cache, the next
+    /// generation runs in a contaminated context, and Genie eventually
+    /// returns ERROR_QUERY_FAILED).
     #[cfg(feature = "genie")]
-    pub fn reset_chat(&self) -> Result<(), EngineError> {
+    pub fn reset_dialog(&self) -> Result<(), EngineError> {
         self.dialog.reset()?;
         self.chat_started.store(false, Ordering::Release);
         Ok(())

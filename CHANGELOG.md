@@ -278,6 +278,42 @@ All notable changes to npurun will be documented here. Format follows
     absolute GitHub URL — relative `../.github/...` paths cannot
     resolve from inside the rendered site.
 
+### Fixed — bench dialog reuse
+
+- `npurun bench` was reusing one Genie dialog across queries without
+  resetting the KV cache between them. The second query ran in a
+  context that still contained turn 1's tokens, generation didn't
+  terminate cleanly (one observed run produced 321 tokens for a
+  "briefly explain" prompt and bled into what looked like the next
+  prompt's template), and Genie eventually returned `ERROR_QUERY_FAILED`
+  (status -6 / Error 1003) on a subsequent query. `bench_model` now
+  calls `engine.reset_dialog()` between queries; renamed
+  `Engine::reset_chat` → `Engine::reset_dialog` since the same call
+  applies to single-shot benchmark loops, not just chat resets, and
+  the doc comment now spells out the contamination failure mode it
+  prevents. Verified end-to-end on Phi 3.5 Mini: 4-query bench
+  completes cleanly, ~12.7 tok/s post-TTFT, ~105 ms TTFT.
+
+### Verified — full end-to-end smoke (2026-05-01)
+
+Against the rebuilt rc.2 binary on Snapdragon X Elite NPU:
+
+- `npurun pull phi-3.5-mini` — 2.08 GB in 250 s, sha256-verified, manifest written.
+- `npurun list` / `npurun show` — manifest fields render correctly (phi3, W4A16, ctx 4096).
+- `npurun run` — 209 ms total for "What is 2+2?", 14.3 chunks/s, terminated cleanly on EOS.
+- `npurun bench` (post-fix) — 4 prompts, no errors, **12.7 tok/s post-TTFT, 105 ms TTFT** (slightly better than the README's headline 11.7 tok/s / 200 ms numbers, which stay in place as conservative).
+- `npurun serve --model phi-3.5-mini` — `/healthz`, `/v1/models`, `/v1/chat/completions` (blocking + SSE), `/api/tags`, `/api/version`, `/api/chat` (blocking) all responsive and well-formed; CORS headers present; concurrent second request returns clean **HTTP 429 with `retry-after: 1`** instead of blocking.
+- `npurun ps` against the running server — reports correct status, model, uptime, auth state, version.
+
+### Known issues
+
+- `/api/tags` and `/api/chat` emit `created_at: "1970-01-01T21:41:58Z"`
+  — the time-of-day is correct but the date sticks at the Unix epoch.
+  Looks like a `%H:%M:%S`-of-Duration formatter being concatenated
+  with a literal `1970-01-01` prefix instead of a proper `DateTime`
+  format. Cosmetic; most clients ignore the field. Track for a
+  follow-up patch.
+
 ### Pending for v0.1.0
 - README walkthrough screenshot/recording.
 - `npu-convert` Python pipeline for HF → bundle conversion (Phase 5).

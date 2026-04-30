@@ -20,4 +20,6 @@ futures = { workspace = true }
 futures-util = { workspace = true }
 zip = { workspace = true }
 indicatif = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
 hexrun-core = { path = "../hexrun-core" }

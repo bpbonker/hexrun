@@ -7,7 +7,6 @@
 
 use std::convert::Infallible;
 use std::sync::Arc;
-use std::sync::Mutex;
 use std::time::SystemTime;
 
 use axum::extract::State;
@@ -21,9 +20,10 @@ use futures::stream::Stream;
 use hexrun_core::Engine;
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
+use tokio::sync::OwnedSemaphorePermit;
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::StreamExt;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 use crate::ServerState;
 
@@ -172,6 +172,26 @@ async fn chat_completions(
         }
     };
 
+    // Reserve the inference slot before doing any heavy work. If the
+    // server is already running another request, return 429.
+    let permit = match state.inference_permit.clone().try_acquire_owned() {
+        Ok(p) => p,
+        Err(_) => {
+            warn!(model = ?state.model_name, "inference slot busy, returning 429");
+            return (
+                StatusCode::TOO_MANY_REQUESTS,
+                [("retry-after", "1")],
+                Json(serde_json::json!({
+                    "error": {
+                        "message": "another inference request is in progress; retry shortly",
+                        "type": "busy"
+                    }
+                })),
+            )
+                .into_response();
+        }
+    };
+
     let model_name = req
         .model
         .clone()
@@ -188,27 +208,26 @@ async fn chat_completions(
     );
 
     if req.stream {
-        chat_completions_streaming(engine, user_prompt, model_name, id, created)
+        chat_completions_streaming(engine, permit, user_prompt, model_name, id, created)
             .await
             .into_response()
     } else {
-        chat_completions_blocking(engine, user_prompt, model_name, id, created)
+        chat_completions_blocking(engine, permit, user_prompt, model_name, id, created)
             .await
             .into_response()
     }
 }
 
 async fn chat_completions_blocking(
-    engine: Arc<Mutex<Engine>>,
+    engine: Arc<Engine>,
+    permit: OwnedSemaphorePermit,
     user_prompt: String,
     model_name: String,
     id: String,
     created: u64,
 ) -> axum::response::Response {
     let join = tokio::task::spawn_blocking(move || {
-        let engine = engine
-            .lock()
-            .map_err(|_| "engine mutex poisoned".to_string())?;
+        let _permit = permit; // released when this closure returns
         engine.generate(&user_prompt).map_err(|e| e.to_string())
     })
     .await;
@@ -258,7 +277,8 @@ async fn chat_completions_blocking(
 }
 
 async fn chat_completions_streaming(
-    engine: Arc<Mutex<Engine>>,
+    engine: Arc<Engine>,
+    permit: OwnedSemaphorePermit,
     user_prompt: String,
     model_name: String,
     id: String,
@@ -275,13 +295,7 @@ async fn chat_completions_streaming(
     let tx_clone = tx.clone();
 
     tokio::task::spawn_blocking(move || {
-        let engine = match engine.lock() {
-            Ok(e) => e,
-            Err(_) => {
-                let _ = tx_clone.blocking_send(StreamItem::Error("engine mutex poisoned".into()));
-                return;
-            }
-        };
+        let _permit = permit; // released when the closure returns
         let res = engine.generate_streaming(&user_prompt, |chunk| {
             let _ = tx_clone.blocking_send(StreamItem::Content(chunk.to_string()));
         });

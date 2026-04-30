@@ -6,7 +6,6 @@
 
 use std::convert::Infallible;
 use std::sync::Arc;
-use std::sync::Mutex;
 use std::time::SystemTime;
 
 use axum::extract::State;
@@ -20,9 +19,10 @@ use futures::stream::Stream;
 use hexrun_core::Engine;
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
+use tokio::sync::OwnedSemaphorePermit;
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::StreamExt;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 use crate::ServerState;
 
@@ -118,6 +118,10 @@ async fn api_generate(
         Some(e) => e,
         None => return no_model_loaded().into_response(),
     };
+    let permit = match state.inference_permit.clone().try_acquire_owned() {
+        Ok(p) => p,
+        Err(_) => return busy_response(),
+    };
     let model_name = req
         .model
         .clone()
@@ -126,10 +130,16 @@ async fn api_generate(
     info!(model = %model_name, stream = req.stream, "ollama /api/generate");
 
     if req.stream {
-        let stream = ndjson_stream(engine, req.prompt, model_name, ResponseShape::Generate);
+        let stream = ndjson_stream(
+            engine,
+            permit,
+            req.prompt,
+            model_name,
+            ResponseShape::Generate,
+        );
         ndjson_response(stream).into_response()
     } else {
-        match run_blocking(engine, req.prompt).await {
+        match run_blocking(engine, permit, req.prompt).await {
             Ok(text) => Json(serde_json::json!({
                 "model": model_name,
                 "created_at": now_iso8601(),
@@ -146,6 +156,10 @@ async fn api_chat(State(state): State<ServerState>, Json(req): Json<ChatRequest>
     let engine = match state.engine.clone() {
         Some(e) => e,
         None => return no_model_loaded().into_response(),
+    };
+    let permit = match state.inference_permit.clone().try_acquire_owned() {
+        Ok(p) => p,
+        Err(_) => return busy_response(),
     };
     let model_name = req
         .model
@@ -171,10 +185,10 @@ async fn api_chat(State(state): State<ServerState>, Json(req): Json<ChatRequest>
     info!(model = %model_name, stream = req.stream, "ollama /api/chat");
 
     if req.stream {
-        let stream = ndjson_stream(engine, user_msg, model_name, ResponseShape::Chat);
+        let stream = ndjson_stream(engine, permit, user_msg, model_name, ResponseShape::Chat);
         ndjson_response(stream).into_response()
     } else {
-        match run_blocking(engine, user_msg).await {
+        match run_blocking(engine, permit, user_msg).await {
             Ok(text) => Json(serde_json::json!({
                 "model": model_name,
                 "created_at": now_iso8601(),
@@ -187,17 +201,31 @@ async fn api_chat(State(state): State<ServerState>, Json(req): Json<ChatRequest>
     }
 }
 
+fn busy_response() -> Response {
+    warn!("inference slot busy, returning 429");
+    (
+        StatusCode::TOO_MANY_REQUESTS,
+        [("retry-after", "1")],
+        Json(serde_json::json!({
+            "error": "another inference request is in progress; retry shortly"
+        })),
+    )
+        .into_response()
+}
+
 #[derive(Clone, Copy)]
 enum ResponseShape {
     Generate,
     Chat,
 }
 
-async fn run_blocking(engine: Arc<Mutex<Engine>>, prompt: String) -> Result<String, String> {
+async fn run_blocking(
+    engine: Arc<Engine>,
+    permit: OwnedSemaphorePermit,
+    prompt: String,
+) -> Result<String, String> {
     tokio::task::spawn_blocking(move || {
-        let engine = engine
-            .lock()
-            .map_err(|_| "engine mutex poisoned".to_string())?;
+        let _permit = permit;
         engine.generate(&prompt).map_err(|e| e.to_string())
     })
     .await
@@ -216,7 +244,8 @@ fn inference_error(msg: &str) -> Response {
 }
 
 fn ndjson_stream(
-    engine: Arc<Mutex<Engine>>,
+    engine: Arc<Engine>,
+    permit: OwnedSemaphorePermit,
     user_prompt: String,
     model_name: String,
     shape: ResponseShape,
@@ -224,13 +253,7 @@ fn ndjson_stream(
     let (tx, rx) = mpsc::channel::<StreamItem>(64);
     let tx_clone = tx.clone();
     tokio::task::spawn_blocking(move || {
-        let engine = match engine.lock() {
-            Ok(e) => e,
-            Err(_) => {
-                let _ = tx_clone.blocking_send(StreamItem::Error("engine mutex poisoned".into()));
-                return;
-            }
-        };
+        let _permit = permit;
         let res = engine.generate_streaming(&user_prompt, |chunk| {
             let _ = tx_clone.blocking_send(StreamItem::Content(chunk.to_string()));
         });

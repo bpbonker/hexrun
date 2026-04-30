@@ -9,7 +9,7 @@ pub mod ollama;
 pub mod openai;
 
 use std::net::SocketAddr;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::SystemTime;
 
 use anyhow::Result;
@@ -23,13 +23,25 @@ use hexrun_core::Engine;
 use tower_http::cors::{Any, CorsLayer};
 
 /// Shared state for the HTTP handlers.
-#[derive(Clone, Default)]
+///
+/// Concurrency model: the loaded `Engine` is shared as an `Arc` and the
+/// concurrent-inference-of-one rule is enforced by a `tokio::sync::Semaphore`
+/// with a single permit. Handlers `try_acquire` the permit before
+/// spawning the blocking inference task; if it's already held they return
+/// HTTP 429 instead of blocking on a `Mutex`. The permit is released
+/// when the spawned task ends (its `OwnedSemaphorePermit` is dropped).
+#[derive(Clone)]
 pub struct ServerState {
-    /// The loaded inference engine, wrapped in a Mutex so concurrent
-    /// requests serialize their queries. None when the server starts
-    /// without a preloaded model (will return 503 Service Unavailable
-    /// until a model is loaded).
-    pub engine: Option<Arc<Mutex<Engine>>>,
+    /// The loaded inference engine. Shared read-only across requests;
+    /// serialization is handled by `inference_permit` below. None when
+    /// the server starts without a preloaded model (endpoints return
+    /// 503 until a model is loaded).
+    pub engine: Option<Arc<Engine>>,
+    /// Single-permit semaphore that serializes concurrent inference
+    /// requests. Held by whichever request task is currently running
+    /// inside `spawn_blocking`; everyone else gets a 429 with
+    /// `Retry-After`.
+    pub inference_permit: Arc<tokio::sync::Semaphore>,
     /// Model name reported in `/v1/models` and `/api/tags`.
     pub model_name: Option<String>,
     /// Wall-clock time the server started; surfaced via /healthz.
@@ -38,6 +50,32 @@ pub struct ServerState {
     /// requests must include `Authorization: Bearer <token>`. Health
     /// and root endpoints stay unauthenticated.
     pub auth_token: Option<String>,
+}
+
+impl Default for ServerState {
+    fn default() -> Self {
+        Self {
+            engine: None,
+            inference_permit: Arc::new(tokio::sync::Semaphore::new(1)),
+            model_name: None,
+            started_at: None,
+            auth_token: None,
+        }
+    }
+}
+
+impl ServerState {
+    /// Build a fresh server state with a single-permit inference semaphore.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Builder helper used by `hexrun serve --model <name>`.
+    pub fn with_engine(mut self, engine: Arc<Engine>, model_name: String) -> Self {
+        self.engine = Some(engine);
+        self.model_name = Some(model_name);
+        self
+    }
 }
 
 /// Build the axum router with all hexrun endpoints.
@@ -127,11 +165,27 @@ async fn root_index() -> Json<serde_json::Value> {
     }))
 }
 
-/// Run the HTTP server until shutdown. Blocks the calling task.
+/// Run the HTTP server until shutdown.
+///
+/// Listens for SIGINT (Ctrl+C). On signal, drains in-flight requests
+/// before closing the listener — clients with an active inference task
+/// get to finish; new connections are refused.
 pub async fn serve(addr: SocketAddr, state: ServerState) -> Result<()> {
     let app = router(state);
     let listener = tokio::net::TcpListener::bind(addr).await?;
     tracing::info!(%addr, "hexrun server listening");
-    axum::serve(listener, app).await?;
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal())
+        .await?;
+    tracing::info!("hexrun server stopped cleanly");
     Ok(())
+}
+
+async fn shutdown_signal() {
+    if let Err(e) = tokio::signal::ctrl_c().await {
+        tracing::warn!(error = %e, "failed to install Ctrl+C handler; server will not shut down gracefully");
+        // If the handler can't install, await forever rather than shut down.
+        std::future::pending::<()>().await;
+    }
+    tracing::info!("Ctrl+C received; draining in-flight requests");
 }

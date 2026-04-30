@@ -162,9 +162,10 @@ async fn main() -> Result<()> {
                         }
                     }
                     let model_name = engine.manifest().name.clone();
-                    let arc_engine = std::sync::Arc::new(std::sync::Mutex::new(engine));
+                    let arc_engine = std::sync::Arc::new(engine);
                     hexrun_server::ServerState {
                         engine: Some(arc_engine),
+                        inference_permit: std::sync::Arc::new(tokio::sync::Semaphore::new(1)),
                         model_name: Some(model_name),
                         started_at: Some(std::time::SystemTime::now()),
                         auth_token: auth_token.clone(),
@@ -176,6 +177,7 @@ async fn main() -> Result<()> {
                          until a model is loaded."
                     );
                     hexrun_server::ServerState {
+                        inference_permit: std::sync::Arc::new(tokio::sync::Semaphore::new(1)),
                         started_at: Some(std::time::SystemTime::now()),
                         auth_token: auth_token.clone(),
                         ..Default::default()
@@ -350,9 +352,14 @@ async fn pull_model(name: &str) -> Result<()> {
         let pb_clone = pb.clone();
         registry_pull(name, move |evt| match evt {
             ProgressEvent::Started { total } => pb_clone.set_length(total.unwrap_or(0)),
+            ProgressEvent::Resuming { already_have } => {
+                pb_clone.set_message(format!("resuming from {:.2} GB", already_have as f64 / 1e9));
+            }
             ProgressEvent::Downloaded { bytes } => pb_clone.set_position(bytes),
             ProgressEvent::Extracting => pb_clone.set_message("extracting".to_string()),
-            ProgressEvent::Done { .. } => pb_clone.finish_with_message("done"),
+            ProgressEvent::Done { sha256, .. } => {
+                pb_clone.finish_with_message(format!("done sha256={}…", &sha256[..12]))
+            }
         })
         .await?
     } else {
@@ -366,6 +373,12 @@ async fn pull_model(name: &str) -> Result<()> {
                     "[pull] starting download (size: {})",
                     t.map(|s| format!("{:.2} GB", s as f64 / 1e9))
                         .unwrap_or_else(|| "unknown".to_string())
+                );
+            }
+            ProgressEvent::Resuming { already_have } => {
+                eprintln!(
+                    "[pull] resuming from {:.2} GB already on disk",
+                    already_have as f64 / 1e9
                 );
             }
             ProgressEvent::Downloaded { bytes } => {
@@ -383,7 +396,10 @@ async fn pull_model(name: &str) -> Result<()> {
                 }
             }
             ProgressEvent::Extracting => eprintln!("[pull] extracting..."),
-            ProgressEvent::Done { .. } => eprintln!("[pull] done in {:.2?}", started.elapsed()),
+            ProgressEvent::Done { sha256, .. } => {
+                eprintln!("[pull] done in {:.2?}", started.elapsed());
+                eprintln!("[pull] sha256={sha256}");
+            }
         })
         .await?
     };

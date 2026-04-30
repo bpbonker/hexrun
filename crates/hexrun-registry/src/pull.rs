@@ -6,14 +6,15 @@
 //! `zip` crate is sync.
 
 use std::collections::BTreeMap;
-use std::fs::File;
+use std::fs::{File, OpenOptions};
 use std::io::{BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
 
 use futures_util::StreamExt;
 use hexrun_core::{ChatTemplate, Manifest, ManifestFiles, Quant};
 use serde::Deserialize;
-use tracing::{debug, info};
+use sha2::{Digest, Sha256};
+use tracing::{debug, info, warn};
 
 use crate::known::KnownModel;
 use crate::{default_cache_dir, RegistryError};
@@ -26,9 +27,14 @@ pub enum ProgressEvent {
         /// Total compressed bytes if the server reported them.
         total: Option<u64>,
     },
+    /// Resuming a partial download from a prior interrupted run.
+    Resuming {
+        /// Bytes already on disk that we'll skip downloading.
+        already_have: u64,
+    },
     /// Bytes have been written to the on-disk download.
     Downloaded {
-        /// Total bytes downloaded so far.
+        /// Total bytes downloaded so far (including resumed bytes).
         bytes: u64,
     },
     /// Extraction phase has begun.
@@ -37,6 +43,8 @@ pub enum ProgressEvent {
     Done {
         /// Path to the model directory containing the manifest.
         model_dir: PathBuf,
+        /// sha256 of the downloaded zip in lowercase hex.
+        sha256: String,
     },
 }
 
@@ -65,22 +73,33 @@ where
     })?;
 
     let zip_path = model_dir.join(".pull.zip");
-    download(known.url, &zip_path, &mut on_progress).await?;
+    let sha256 = download(known.url, &zip_path, &mut on_progress).await?;
+    info!(sha256 = %sha256, "download checksum");
 
     on_progress(ProgressEvent::Extracting);
     let bundle_root = extract_zip(&zip_path, &model_dir.join("bundle"))?;
     let _ = std::fs::remove_file(&zip_path);
 
-    write_manifest(known, &model_dir, &bundle_root)?;
+    write_manifest(known, &model_dir, &bundle_root, &sha256)?;
 
     on_progress(ProgressEvent::Done {
         model_dir: model_dir.clone(),
+        sha256,
     });
     info!(name = %known.name, dir = %model_dir.display(), "pull complete");
     Ok(model_dir)
 }
 
-async fn download<F>(url: &str, dest: &Path, on_progress: &mut F) -> Result<(), RegistryError>
+/// Stream `url` into `dest` with sha256 hashing and resume support.
+///
+/// If `dest` already exists from a prior interrupted run we send a
+/// `Range: bytes=N-` header to ask the server for the rest. To keep the
+/// sha256 consistent we also feed the already-on-disk bytes through the
+/// hasher first. If the server doesn't support ranges (200 OK with full
+/// body, or 416 not satisfiable), we fall back to a fresh download.
+///
+/// Returns the lowercase hex sha256 of the complete downloaded file.
+async fn download<F>(url: &str, dest: &Path, on_progress: &mut F) -> Result<String, RegistryError>
 where
     F: FnMut(ProgressEvent),
 {
@@ -92,14 +111,63 @@ where
             source: Box::new(e),
         })?;
 
-    let resp = client
-        .get(url)
-        .send()
-        .await
-        .map_err(|e| RegistryError::Download {
-            url: url.to_string(),
-            source: Box::new(e),
+    // Decide whether to attempt resume.
+    let existing_size = std::fs::metadata(dest).map(|m| m.len()).unwrap_or(0);
+    let mut hasher = Sha256::new();
+    let mut bytes_seen: u64 = 0;
+
+    let mut req = client.get(url);
+    if existing_size > 0 {
+        req = req.header("Range", format!("bytes={existing_size}-"));
+        debug!(
+            existing = existing_size,
+            "attempting resume with Range header"
+        );
+    }
+
+    let resp = req.send().await.map_err(|e| RegistryError::Download {
+        url: url.to_string(),
+        source: Box::new(e),
+    })?;
+    let status = resp.status();
+    let is_partial = status.as_u16() == 206;
+    let range_unsupported = existing_size > 0 && status.as_u16() == 200;
+    let range_invalid = existing_size > 0 && status.as_u16() == 416;
+
+    // Determine how to open the file and where to start.
+    let mut file = if is_partial {
+        // Server is sending the rest; pre-feed existing bytes through the hasher,
+        // then append.
+        let existing = File::open(dest).map_err(|e| RegistryError::Io {
+            path: dest.to_path_buf(),
+            source: e,
         })?;
+        feed_hasher(&mut hasher, existing).map_err(|e| RegistryError::Io {
+            path: dest.to_path_buf(),
+            source: e,
+        })?;
+        bytes_seen = existing_size;
+        on_progress(ProgressEvent::Resuming {
+            already_have: existing_size,
+        });
+        BufWriter::new(OpenOptions::new().append(true).open(dest).map_err(|e| {
+            RegistryError::Io {
+                path: dest.to_path_buf(),
+                source: e,
+            }
+        })?)
+    } else {
+        if range_unsupported {
+            warn!("server returned 200 instead of 206; restarting download from scratch");
+        } else if range_invalid {
+            warn!("server returned 416; partial file is invalid, restarting");
+        }
+        BufWriter::new(File::create(dest).map_err(|e| RegistryError::Io {
+            path: dest.to_path_buf(),
+            source: e,
+        })?)
+    };
+
     let resp = resp
         .error_for_status()
         .map_err(|e| RegistryError::Download {
@@ -107,16 +175,24 @@ where
             source: Box::new(e),
         })?;
 
-    let total = resp.content_length();
+    // Total size for progress: prefer Content-Range, fall back to Content-Length+existing.
+    let total = if is_partial {
+        // Genuinely the total of the original file.
+        resp.headers()
+            .get("content-range")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|s| s.rsplit('/').next())
+            .and_then(|s| s.parse::<u64>().ok())
+            .or_else(|| resp.content_length().map(|c| c + existing_size))
+    } else {
+        resp.content_length()
+    };
     on_progress(ProgressEvent::Started { total });
-
-    let mut file = BufWriter::new(File::create(dest).map_err(|e| RegistryError::Io {
-        path: dest.to_path_buf(),
-        source: e,
-    })?);
+    if is_partial {
+        on_progress(ProgressEvent::Downloaded { bytes: bytes_seen });
+    }
 
     let mut stream = resp.bytes_stream();
-    let mut bytes_seen: u64 = 0;
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.map_err(|e| RegistryError::Download {
             url: url.to_string(),
@@ -126,6 +202,7 @@ where
             path: dest.to_path_buf(),
             source: e,
         })?;
+        hasher.update(&chunk);
         bytes_seen += chunk.len() as u64;
         on_progress(ProgressEvent::Downloaded { bytes: bytes_seen });
     }
@@ -133,6 +210,20 @@ where
         path: dest.to_path_buf(),
         source: e,
     })?;
+
+    Ok(hex::encode(hasher.finalize()))
+}
+
+/// Read a file in chunks and feed it through the supplied sha256 hasher.
+fn feed_hasher(hasher: &mut Sha256, mut f: File) -> std::io::Result<()> {
+    let mut buf = [0u8; 64 * 1024];
+    loop {
+        let n = f.read(&mut buf)?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+    }
     Ok(())
 }
 
@@ -232,6 +323,7 @@ fn write_manifest(
     known: &KnownModel,
     model_dir: &Path,
     bundle_root: &Path,
+    download_sha256: &str,
 ) -> Result<(), RegistryError> {
     let genie_config_path = bundle_root.join("genie_config.json");
     let genie_json =
@@ -257,6 +349,9 @@ fn write_manifest(
         .map(|p| p.to_path_buf())
         .unwrap_or_else(|_| PathBuf::from("bundle"));
 
+    let mut sha256 = BTreeMap::new();
+    sha256.insert("download.zip".to_string(), download_sha256.to_string());
+
     let manifest = Manifest {
         name: known.name.to_string(),
         version: "0.1.0".to_string(),
@@ -276,7 +371,7 @@ fn write_manifest(
             system_prompt: known.chat_template.system_prompt.to_string(),
             template: known.chat_template.template.to_string(),
         }),
-        sha256: BTreeMap::new(),
+        sha256,
     };
 
     let manifest_path = model_dir.join("hexrun.json");

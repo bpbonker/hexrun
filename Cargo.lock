@@ -723,6 +723,7 @@ dependencies = [
  "hexrun-registry",
  "hexrun-server",
  "indicatif",
+ "qnn",
  "tokio",
  "tracing",
  "tracing-subscriber",

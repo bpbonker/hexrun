@@ -22,3 +22,4 @@ indicatif = { workspace = true }
 hexrun-core = { path = "../hexrun-core", features = ["genie"] }
 hexrun-registry = { path = "../hexrun-registry" }
 hexrun-server = { path = "../hexrun-server" }
+qnn = { path = "../qnn" }

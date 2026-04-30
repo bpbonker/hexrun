@@ -1,9 +1,9 @@
 use std::env;
 use std::ffi::OsString;
-use std::io::Write;
+use std::io::{IsTerminal, Write};
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use anyhow::{anyhow, Context, Result};
 use clap::{Parser, Subcommand};
@@ -44,8 +44,26 @@ enum Cmd {
         #[arg(trailing_var_arg = true)]
         prompt: Vec<String>,
     },
+    /// Print versions of hexrun, libGenie, and the QAIRT SDK in a single shot
+    Version,
     /// List in-flight sessions on a running `hexrun serve` (Phase 4)
     Ps,
+    /// Run a fixed-prompt warm-query benchmark against a locally cached model
+    Bench {
+        /// Model name (e.g. "phi-3.5-mini") or absolute path to a model directory
+        model: String,
+        /// Override the default prompt set with a single custom prompt.
+        /// If omitted, four built-in prompts are used.
+        #[arg(long)]
+        prompt: Option<String>,
+        /// Number of times to run each prompt (defaults to 1).
+        #[arg(long, default_value_t = 1)]
+        repeats: usize,
+        /// Skip the first query when computing the warm-summary aggregate.
+        /// Defaults to true; pass --no-skip-first to include it.
+        #[arg(long, default_value_t = true)]
+        skip_first: bool,
+    },
     /// Start the OpenAI- and Ollama-compatible HTTP server. The named model
     /// is loaded on startup and stays resident in NPU shared memory for
     /// the lifetime of the server.
@@ -99,6 +117,13 @@ async fn main() -> Result<()> {
             let prompt = prompt.join(" ");
             run_model(&model, &prompt)?
         }
+        Cmd::Version => print_versions()?,
+        Cmd::Bench {
+            model,
+            prompt,
+            repeats,
+            skip_first,
+        } => bench_model(&model, prompt.as_deref(), repeats, skip_first)?,
         Cmd::Ps => {
             println!("ps: (Phase 4 — not yet implemented)");
         }
@@ -309,36 +334,59 @@ async fn pull_model(name: &str) -> Result<()> {
         return Err(anyhow!("unknown model"));
     }
 
-    let pb = indicatif::ProgressBar::new(0);
-    pb.set_style(
-        indicatif::ProgressStyle::with_template(
-            "{spinner:.cyan} {msg:30} [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} {bytes_per_sec} eta {eta}",
-        )
-        .unwrap()
-        .progress_chars("=>-"),
-    );
-    pb.set_message(format!("pull {name}"));
-    let pb_clone = pb.clone();
-
-    let model_dir = registry_pull(name, move |evt| match evt {
-        ProgressEvent::Started { total } => {
-            if let Some(t) = total {
-                pb_clone.set_length(t);
-            } else {
-                pb_clone.set_length(0);
+    // TTY-aware progress: indicatif progress bar in interactive terminals,
+    // periodic log lines in non-interactive ones (CI, script pipes).
+    let interactive = std::io::stderr().is_terminal();
+    let model_dir = if interactive {
+        let pb = indicatif::ProgressBar::new(0);
+        pb.set_style(
+            indicatif::ProgressStyle::with_template(
+                "{spinner:.cyan} {msg:30} [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} {bytes_per_sec} eta {eta}",
+            )
+            .unwrap()
+            .progress_chars("=>-"),
+        );
+        pb.set_message(format!("pull {name}"));
+        let pb_clone = pb.clone();
+        registry_pull(name, move |evt| match evt {
+            ProgressEvent::Started { total } => pb_clone.set_length(total.unwrap_or(0)),
+            ProgressEvent::Downloaded { bytes } => pb_clone.set_position(bytes),
+            ProgressEvent::Extracting => pb_clone.set_message("extracting".to_string()),
+            ProgressEvent::Done { .. } => pb_clone.finish_with_message("done"),
+        })
+        .await?
+    } else {
+        let started = Instant::now();
+        let mut total: Option<u64> = None;
+        let mut last_logged = started;
+        registry_pull(name, move |evt| match evt {
+            ProgressEvent::Started { total: t } => {
+                total = t;
+                eprintln!(
+                    "[pull] starting download (size: {})",
+                    t.map(|s| format!("{:.2} GB", s as f64 / 1e9))
+                        .unwrap_or_else(|| "unknown".to_string())
+                );
             }
-        }
-        ProgressEvent::Downloaded { bytes } => {
-            pb_clone.set_position(bytes);
-        }
-        ProgressEvent::Extracting => {
-            pb_clone.set_message("extracting".to_string());
-        }
-        ProgressEvent::Done { .. } => {
-            pb_clone.finish_with_message("done");
-        }
-    })
-    .await?;
+            ProgressEvent::Downloaded { bytes } => {
+                if last_logged.elapsed() > Duration::from_secs(5) {
+                    let pct = total
+                        .map(|t| (bytes as f64 / t as f64) * 100.0)
+                        .unwrap_or(0.0);
+                    let secs = started.elapsed().as_secs_f64();
+                    let mbps = (bytes as f64 / 1e6) / secs.max(0.001);
+                    eprintln!(
+                        "[pull] {pct:.1}% ({:.2} GB) at {mbps:.1} MB/s",
+                        bytes as f64 / 1e9
+                    );
+                    last_logged = Instant::now();
+                }
+            }
+            ProgressEvent::Extracting => eprintln!("[pull] extracting..."),
+            ProgressEvent::Done { .. } => eprintln!("[pull] done in {:.2?}", started.elapsed()),
+        })
+        .await?
+    };
 
     println!("\nmodel ready at {}", model_dir.display());
     println!("verify it: hexrun show {name}\nrun it:    hexrun run {name} \"hello\"");
@@ -349,6 +397,155 @@ fn remove_model(name: &str) -> Result<()> {
     let removed = hexrun_registry::remove_local(name)?;
     println!("removed {}", removed.display());
     Ok(())
+}
+
+fn print_versions() -> Result<()> {
+    println!("hexrun       {}", env!("CARGO_PKG_VERSION"));
+    let v = qnn::api_version();
+    println!("libGenie     {}.{}.{}", v.major, v.minor, v.patch);
+    if let Ok(root) = env::var("QNN_SDK_ROOT") {
+        let sdk_yaml = Path::new(&root).join("sdk.yaml");
+        let mut shown = false;
+        if let Ok(text) = std::fs::read_to_string(&sdk_yaml) {
+            for line in text.lines() {
+                let l = line.trim();
+                if let Some(rest) = l.strip_prefix("version:") {
+                    println!("QAIRT SDK    {}  ({})", rest.trim(), root);
+                    shown = true;
+                    break;
+                }
+            }
+        }
+        if !shown {
+            println!("QAIRT SDK    (sdk.yaml not parseable; root: {root})");
+        }
+    } else {
+        println!("QAIRT SDK    (QNN_SDK_ROOT not set)");
+    }
+    Ok(())
+}
+
+const BENCH_PROMPTS: &[&str] = &[
+    "Write a one-line joke about Snapdragon laptops.",
+    "Briefly explain why an NPU is more energy-efficient than a CPU for matrix multiplication.",
+    "List three reasons running language models locally on a laptop is useful.",
+    "What is 17 multiplied by 23? Just the number.",
+];
+
+fn approx_token_count(s: &str) -> usize {
+    let words = s.split_whitespace().count();
+    ((words as f64) * 1.3).round() as usize
+}
+
+fn bench_model(
+    model: &str,
+    custom_prompt: Option<&str>,
+    repeats: usize,
+    skip_first: bool,
+) -> Result<()> {
+    let dir = resolve_model_dir(model)?;
+    let cfg = EngineConfig {
+        model_dir: dir,
+        ..Default::default()
+    };
+    let load_started = Instant::now();
+    let engine = Engine::load(cfg)?;
+    let load_elapsed = load_started.elapsed();
+    eprintln!(
+        "==  hexrun bench: {} ({}, {:?}, ctx {})  ==",
+        engine.manifest().name,
+        engine.manifest().arch,
+        engine.manifest().quant,
+        engine.manifest().context,
+    );
+    eprintln!("[bundle loaded in {load_elapsed:.2?}]");
+
+    let prompts: Vec<&str> = match custom_prompt {
+        Some(p) => vec![p],
+        None => BENCH_PROMPTS.to_vec(),
+    };
+    let total_runs = prompts.len() * repeats.max(1);
+    eprintln!("[running {total_runs} queries]\n");
+
+    let mut runs: Vec<RunStat> = Vec::with_capacity(total_runs);
+    let mut idx = 0usize;
+    for _ in 0..repeats.max(1) {
+        for prompt in &prompts {
+            idx += 1;
+            let started = Instant::now();
+            let mut output = String::new();
+            let mut first_token_at: Option<Duration> = None;
+            engine.generate_streaming(prompt, |chunk| {
+                if first_token_at.is_none() && !chunk.is_empty() {
+                    first_token_at = Some(started.elapsed());
+                }
+                output.push_str(chunk);
+            })?;
+            let total = started.elapsed();
+            let ttft = first_token_at.unwrap_or(total);
+            let tokens = approx_token_count(&output);
+            let gen_time = total.saturating_sub(ttft);
+            let tps_post = if gen_time.as_secs_f64() > 0.0 {
+                tokens as f64 / gen_time.as_secs_f64()
+            } else {
+                0.0
+            };
+            println!("--- query {idx} ---");
+            println!("    prompt: {prompt}");
+            println!("    response ({tokens} approx tokens): {}", output.trim());
+            println!("    total: {total:.2?}   ttft: {ttft:.2?}   gen: {gen_time:.2?}   tok/s post-ttft: {tps_post:.1}");
+            println!();
+            runs.push(RunStat {
+                total,
+                ttft,
+                gen_time,
+                tokens,
+            });
+        }
+    }
+
+    let warm: Vec<&RunStat> = if skip_first && runs.len() > 1 {
+        runs.iter().skip(1).collect()
+    } else {
+        runs.iter().collect()
+    };
+    if warm.is_empty() {
+        return Ok(());
+    }
+    let n = warm.len() as u32;
+    let avg = |f: fn(&RunStat) -> Duration| -> Duration {
+        warm.iter().map(|r| f(r)).sum::<Duration>() / n
+    };
+    let total_tokens: usize = warm.iter().map(|r| r.tokens).sum();
+    let total_secs: f64 = warm.iter().map(|r| r.total.as_secs_f64()).sum();
+    let total_gen_secs: f64 = warm.iter().map(|r| r.gen_time.as_secs_f64()).sum();
+    let label = if skip_first {
+        "warm summary (skipping first query)"
+    } else {
+        "summary"
+    };
+    println!("==  {label}  ==");
+    println!("    queries:                  {}", warm.len());
+    println!("    avg total per query:      {:.2?}", avg(|r| r.total));
+    println!("    avg time-to-first-token:  {:.2?}", avg(|r| r.ttft));
+    println!("    avg generation time:      {:.2?}", avg(|r| r.gen_time));
+    println!(
+        "    aggregate tok/s (incl ttft): {:.1}",
+        total_tokens as f64 / total_secs
+    );
+    println!(
+        "    aggregate tok/s (post ttft): {:.1}",
+        total_tokens as f64 / total_gen_secs
+    );
+    Ok(())
+}
+
+#[derive(Debug)]
+struct RunStat {
+    total: Duration,
+    ttft: Duration,
+    gen_time: Duration,
+    tokens: usize,
 }
 
 fn run_model(model: &str, prompt: &str) -> Result<()> {

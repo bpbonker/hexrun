@@ -20,7 +20,7 @@ version = "0.1.0-dev"
 edition = "2021"
 rust-version = "1.82"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/bpbprofessional/hexrun"
+repository = "https://github.com/bpbonker/hexrun"
 authors = ["Brenden Bonker", "hexrun contributors"]
 
 [workspace.dependencies]

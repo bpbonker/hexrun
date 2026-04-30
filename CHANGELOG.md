@@ -174,6 +174,41 @@ All notable changes to hexrun will be documented here. Format follows
   facts established in turn 1 are answered correctly, on both
   blocking and streaming paths, on both OpenAI and Ollama surfaces.
 
+### Added — `hex-convert` (Phase 5 starter)
+
+- Python sidecar at `python/hex-convert/` with three subcommands:
+  - `hex-convert manifest --model-dir <dir> --bundle-dir <bundle>
+    --name <slug>` reads the Genie bundle's `genie_config.json`,
+    sniffs `arch` and `quant` from the bundle directory name (or
+    accepts explicit overrides), looks up the matching chat template
+    (Phi 3 / Llama 3 / Qwen 2.5 patterns ship as defaults), walks the
+    bundle for sha256 sealing, and writes a `hexrun.json`. Pure
+    Python, ARM64-friendly. Smoke-tested against the real local
+    Phi 3.5 Mini bundle — produces a manifest the Rust runtime loads
+    cleanly with all 8 file sha256s captured.
+  - `hex-convert inspect <bundle-or-manifest>` pretty-prints either a
+    full hexrun manifest (with file sizes + chat template + on-by-
+    default sha256 verification) or a raw Genie bundle (showing what
+    a manifest would contain).
+  - `hex-convert export <slug> --output <dir>` orchestrates the heavy
+    HF -> ONNX -> AI-Hub-cloud-compile -> Genie bundle pipeline by
+    shelling out to `qai-hub-models`'s per-model export script, then
+    chains into `manifest`. Curated recipes for `phi-3.5-mini`,
+    `llama-v3-1-8b-instruct`, `qwen-2-5-7b`. Requires
+    `QAI_HUB_API_TOKEN`, x64 Python, and 30-90 minutes of cloud
+    compile time per model. `--skip-compile` re-runs only the
+    manifest step when the bundle is already on disk.
+- Optional dependency split in `pyproject.toml`: the lightweight
+  default (`click`, `rich`) covers `manifest` and `inspect` for
+  ARM64; the heavy ONNX / `qai-hub-models` stack is gated behind
+  `pip install -e ".[export]"` for x64 Python.
+- 8 passing pytest cases covering manifest emission against
+  synthesized Genie-bundle layouts: arch / quant sniffing,
+  sha256 correctness, chat-template selection, explicit overrides,
+  rejection of bundles outside `model_dir`, missing
+  `genie_config.json`, missing `tokenizer.json`, and unknown arch
+  without an override.
+
 ### Pending for v0.1.0
 - README walkthrough screenshot/recording.
 - `hex-convert` Python pipeline for HF → bundle conversion (Phase 5).

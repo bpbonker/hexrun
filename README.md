@@ -110,7 +110,11 @@ hosted on Qualcomm's HuggingFace org:
 | `llama-v3-1-8b-instruct` | ~4.5 GB | URL correct; not yet bench'd |
 | `qwen-2-5-7b` | ~4.3 GB | URL correct; w4a16 variant |
 
-A remote registry beyond the hardcoded list is planned (Phase 5).
+A remote registry beyond the hardcoded list is planned (Phase 5). For
+adding models that aren't in the built-in registry today, see
+[`python/hex-convert/`](python/hex-convert/) — a Python sidecar that
+takes any Genie bundle (downloaded or built locally) and writes the
+`hexrun.json` manifest the runtime needs.
 
 ## Architecture (one paragraph)
 
@@ -193,8 +197,9 @@ with HTTP 429 + `Retry-After: 1` rather than queued indefinitely.
   the new tokens, not the whole transcript
 
 **In progress:**
-- [ ] Phase 5: `hex-convert` Python pipeline (HF → ONNX → AI Hub →
-  bundle); remote registry beyond the hardcoded list
+- [x] Phase 5 (starter): `hex-convert manifest` + `hex-convert inspect`
+  for local Genie bundles; `hex-convert export` shells out to
+  `qai-hub-models`. Curated recipe set; remote registry still open.
 - [ ] Phase 6: signed Windows MSIX installer, winget manifest, CI matrix,
   docs site
 

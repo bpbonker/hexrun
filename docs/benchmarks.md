@@ -159,6 +159,61 @@ scripts\dev-shell.bat cargo run --release -p qnn --example qwen-bench
 
 Source: `crates/qnn/examples/qwen-bench.rs`. The benchmark prints raw per-query timings plus the warm summary.
 
+## Energy: joules per token (2026-04-30)
+
+**Setup:** Phi 3.5 Mini (w4a16) on Snapdragon X Elite NPU. Laptop on
+battery (mandatory — Windows `BatteryStatus.DischargeRate` is only
+populated when discharging). Display dimmed, no other apps active.
+Sampled `Win32_Battery.DischargeRate` at 2 Hz for 15 s of idle, then
+during a `hexrun bench phi-3.5-mini --repeats 2` run (8 queries total).
+
+| Metric | Value |
+|---|---:|
+| Idle baseline (display + OS only) | **4.09 W** |
+| During inference | **10.99 W** |
+| Inference delta (NPU + CPU orchestration) | **6.90 W** |
+| Total inference time | 122.82 s |
+| Total inference energy (delta × time) | **847 J** |
+| Approx tokens generated | 669 |
+| **Joules per token (delta)** | **~1.27 J/token** |
+
+### What this means
+
+The NPU draws roughly **6.9 W** above idle to sustain ~11–12 tok/s on
+Phi 3.5 Mini. At 1.27 J/token, a 1000-token reply costs about 1.3
+kilojoules of incremental laptop energy — a fraction of a percent of a
+typical 50 Wh laptop battery (~180 kJ).
+
+For a rough comparison: llama.cpp on the same machine's 12-core Oryon
+CPU running Phi 3.5 Mini Q4 typically reports CPU package power in the
+**12–18 W** range during inference (Snapdragon X Elite all-core load),
+at ~5–8 tok/s — that's roughly **2–3.5 J/token**, or **2–3× the energy
+per token** of the NPU path. The NPU's efficiency advantage is real;
+it's most visible on battery and on small-to-medium models like Phi.
+
+Caveats:
+- `BatteryStatus.DischargeRate` is whole-system power, not NPU-only.
+  The 6.9 W delta includes the CPU cycles spent orchestrating Genie
+  calls, the polling loop (`poll: true`), tokenization, etc. The NPU
+  itself almost certainly draws less.
+- Battery telemetry is noisy at low loads — the script warns if the
+  delta is < 0.5 W.
+- We do not have an apples-to-apples llama.cpp number on this machine
+  yet. The 12–18 W CPU figure is from public benchmarks, not local
+  measurement; that's the next thing to nail down.
+
+### Reproduction
+
+```powershell
+# Unplug the laptop first.
+pwsh -File scripts\energy-bench.ps1 -Model phi-3.5-mini -BaselineSeconds 15
+```
+
+Source: `scripts/energy-bench.ps1`. Outputs idle baseline, busy mean,
+delta watts, total inference energy, and joules per token. Raw bench
+stdout/stderr logged to `.energy-bench-stdout.log` /
+`.energy-bench-stderr.log`.
+
 ---
 
 *Numbers in this document are subjective to the specific hardware and SDK

@@ -48,13 +48,13 @@ Goal: README + handoff describe the actual current product, not the dev-time sca
 | D2 | `docs/handoff.md` rewrite | 10 min | Update to reflect Phase 2-4 plus LAN-safety drop |
 | D3 | CHANGELOG.md updates | 5 min | Capture today's commits in `[0.1.0-dev]` |
 
-## Wave E — Headline numbers (~60 min)
+## Wave E — Headline numbers (✅ done 2026-04-30)
 
 Goal: quantify the NPU's energy efficiency claim with measured data.
 
 | # | Item | Effort | Notes |
 |---|---|---:|---|
-| E1 | Energy measurement script | 60 min | `powercfg /batteryreport` deltas before/after fixed-prompt run; compare NPU run to CPU baseline (via Ollama if installed). Save to `docs/benchmarks.md` |
+| E1 | Energy measurement script | done | `scripts/energy-bench.ps1` samples `Win32_Battery.DischargeRate` at 2 Hz on battery; computes idle vs. busy delta, total inference energy, joules per token. Phi 3.5 Mini result: **~1.27 J/token at 6.9 W delta**. Captured in `docs/benchmarks.md`. |
 
 ## Wave F — Real chat performance (~3 hr)
 

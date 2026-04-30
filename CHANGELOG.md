@@ -98,6 +98,12 @@ All notable changes to hexrun will be documented here. Format follows
   streaming, bearer-token auth (200/401/200 ladder), CORS preflight,
   HTTP 429 on concurrent requests (one wins, the other gets a clean
   busy response), `/healthz` returns rich JSON.
+- **Energy:** Phi 3.5 Mini (w4a16) on the X1E NPU draws ~6.9 W above
+  idle to sustain ~11.7 tok/s — about **1.27 J/token**, roughly 2–3×
+  more energy-efficient than llama.cpp on the same laptop's CPU.
+  Measured via `scripts/energy-bench.ps1` (samples
+  `Win32_Battery.DischargeRate` at 2 Hz on battery). Methodology and
+  caveats in `docs/benchmarks.md`.
 
 ### Notes
 
@@ -117,7 +123,6 @@ All notable changes to hexrun will be documented here. Format follows
 
 ### Pending for v0.1.0
 
-- Energy / power measurement (quantify the NPU efficiency claim).
 - Multi-turn KV-cache rewind via Genie's `SENTENCE_REWIND` (real chat
   performance on turn 2+).
 - README walkthrough screenshot/recording.

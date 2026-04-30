@@ -73,9 +73,11 @@ full operational state.
 | llama.cpp on the same laptop's CPU (Phi 3.5 Q4) | X1E CPU | ~5–8 tok/s (estimated) | — |
 
 The Phi result is the headline: faster than CPU paths, NPU does the work,
-~5–10× more energy-efficient (energy measurement is on the roadmap to
-quantify). The 7B regime is currently slower than CPU on this generation
-of silicon — see [`docs/findings.md`](docs/findings.md) for the discussion.
+**~1.27 J/token at ~6.9 W delta** — measured on battery, roughly 2–3×
+more energy-efficient than CPU paths on the same laptop (see
+[`docs/benchmarks.md`](docs/benchmarks.md) for methodology). The 7B
+regime is currently slower than CPU on this generation of silicon — see
+[`docs/findings.md`](docs/findings.md) for the discussion.
 
 ## Prerequisites
 

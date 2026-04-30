@@ -7,9 +7,14 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
-links = "QnnSystem"
+# Note: QAIRT does not ship a QnnSystem.lib import library on Windows ARM64,
+# only QnnSystem.dll. We bind the C ABI here and load symbols at runtime
+# (Phase 1 will use the `libloading` crate or similar). No `links` key.
 
 [lib]
+# QNN headers contain doc comments with markdown that rustdoc tries to
+# compile as Rust code; the bindings are generated FFI, doctests are useless.
+doctest = false
 
 [build-dependencies]
 bindgen = { workspace = true }

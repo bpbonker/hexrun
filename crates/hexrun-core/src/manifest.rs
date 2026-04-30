@@ -17,66 +17,98 @@ use tracing::warn;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Quant {
+    /// Per-tensor INT8 weights and activations.
     Int8,
     /// Per-channel INT8 weights with INT16 activations (recommended for
     /// attention stability on most LLMs).
     #[serde(rename = "int8-w-int16-a")]
     Int8WInt16A,
+    /// 4-bit weights (group-quantized). Smallest footprint; quality varies
+    /// by model.
     Int4,
     /// FP16 — supported on GPU/CPU EPs but generally not on HTP.
     Fp16,
 }
 
+/// A `hexrun.json` manifest.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Manifest {
+    /// Registry name, e.g. `"phi-3.5-mini"`.
     pub name: String,
+    /// Manifest version (model release), e.g. `"1.0.0"`.
     pub version: String,
+    /// Model architecture identifier (`"phi3"`, `"llama"`, `"qwen2"`, ...).
     pub arch: String,
+    /// Vocabulary size of the tokenizer.
     pub vocab: u32,
+    /// Maximum context length (positions) the model was built for.
     pub context: u32,
+    /// Quantization scheme used to produce the model.
     pub quant: Quant,
     /// QNN SDK version against which the context binary was compiled, e.g.
     /// "2.44.0". Used by the runtime to refuse loading on a too-different
-    /// runtime — see `Manifest::check_sdk_compat`.
+    /// runtime — see [`Manifest::check_sdk_compat`].
     pub qnn_sdk: String,
+    /// Files that ship with this model.
     pub files: ManifestFiles,
-    /// sha256 hex digests for each file referenced under `files`. Keyed by
-    /// the field name (e.g. "model", "ctx", "tokenizer").
+    /// sha256 hex digests for each file referenced under [`Self::files`].
+    /// Keyed by the field name (e.g. `"model"`, `"ctx"`, `"tokenizer"`).
     #[serde(default)]
     pub sha256: BTreeMap<String, String>,
 }
 
+/// Files referenced by a manifest. All paths are relative to the model
+/// directory; absolute paths and `..` segments are rejected at validation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ManifestFiles {
+    /// ONNX file (path relative to the manifest's directory).
     pub model: String,
+    /// Optional QNN context binary (`*.qnn_ctx.bin`) for fast cold start.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ctx: Option<String>,
+    /// HuggingFace-style `tokenizer.json` file.
     pub tokenizer: String,
+    /// Optional architecture/runtime config file.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub config: Option<String>,
 }
 
+/// Errors raised while reading or validating a manifest.
 #[derive(Debug, Error)]
 pub enum ManifestError {
+    /// Reading the manifest file from disk failed.
     #[error("manifest at {path}: {source}")]
     Io {
+        /// Path of the manifest file.
         path: PathBuf,
+        /// Underlying I/O error.
         #[source]
         source: std::io::Error,
     },
+    /// Manifest is not valid JSON or doesn't match the expected schema.
     #[error("manifest at {path} is not valid JSON: {source}")]
     Parse {
+        /// Path of the manifest file.
         path: PathBuf,
+        /// Underlying JSON parse error.
         #[source]
         source: serde_json::Error,
     },
+    /// Manifest fields were structurally valid but failed semantic validation.
     #[error("manifest validation failed: {0}")]
     Invalid(String),
+    /// The runtime QNN SDK is too different from the manifest's
+    /// `qnn_sdk` field — major-version mismatch.
     #[error(
         "manifest QNN SDK version {manifest} differs from runtime {runtime} by major; \
          refusing to load. Re-pull or re-convert the model."
     )]
-    SdkMajorMismatch { manifest: String, runtime: String },
+    SdkMajorMismatch {
+        /// The version recorded in the manifest.
+        manifest: String,
+        /// The live runtime version.
+        runtime: String,
+    },
 }
 
 impl Manifest {
@@ -142,7 +174,10 @@ impl Manifest {
         let r = match parse_semver(runtime_sdk) {
             Some(v) => v,
             None => {
-                warn!(runtime = runtime_sdk, "runtime QNN version unparseable; skipping check");
+                warn!(
+                    runtime = runtime_sdk,
+                    "runtime QNN version unparseable; skipping check"
+                );
                 return Ok(());
             }
         };
@@ -198,19 +233,16 @@ fn is_semverish(s: &str) -> bool {
 }
 
 fn parse_semver(s: &str) -> Option<(u32, u32, u32)> {
-    let mut parts = s.split('.');
+    // Strip any "-pre" or "+build" suffix first so MAJOR.MINOR.PATCH parsing
+    // is straightforward, including for inputs like "2.44.0+build.5".
+    let core = s.split(['-', '+']).next()?;
+    let mut parts = core.split('.');
     let major = parts.next()?.parse().ok()?;
     let minor = parts.next()?.parse().ok()?;
-    let patch_with_extra = parts.next()?;
+    let patch = parts.next()?.parse().ok()?;
     if parts.next().is_some() {
         return None;
     }
-    // Allow trailing pre-release/build metadata after MAJOR.MINOR.PATCH.
-    let patch = patch_with_extra
-        .split(|c: char| !c.is_ascii_digit())
-        .next()?
-        .parse()
-        .ok()?;
     Some((major, minor, patch))
 }
 
@@ -293,8 +325,7 @@ mod tests {
     #[test]
     fn accepts_valid_sha256() {
         let mut m = good();
-        m.sha256
-            .insert("model".into(), "a".repeat(64));
+        m.sha256.insert("model".into(), "a".repeat(64));
         m.validate().unwrap();
     }
 

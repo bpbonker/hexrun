@@ -1,5 +1,5 @@
 use std::env;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 fn main() {
     println!("cargo:rerun-if-env-changed=QNN_SDK_ROOT");
@@ -33,7 +33,7 @@ fn main() {
     }
 }
 
-fn generate_real_bindings(sdk_root: &PathBuf, out_dir: &PathBuf) {
+fn generate_real_bindings(sdk_root: &Path, out_dir: &Path) {
     let include_dir = sdk_root.join("include").join("QNN");
     if !include_dir.exists() {
         panic!(
@@ -80,29 +80,29 @@ fn generate_real_bindings(sdk_root: &PathBuf, out_dir: &PathBuf) {
     bindings.write_to_file(&out).expect("write bindings.rs");
 }
 
-fn link_qnn(sdk_root: &PathBuf) {
-    // QNN ships per-arch lib dirs; on Windows ARM64 it's lib/aarch64-windows-msvc.
+fn link_qnn(sdk_root: &Path) {
+    // QAIRT does not ship a QnnSystem.lib import library on Windows ARM64
+    // (only QnnSystem.dll). We rely on runtime dynamic loading via the
+    // `libloading` crate (Phase 1) rather than a static link, so this build
+    // script only emits a search-path hint and a re-run trigger.
     let arch_dir = sdk_root.join("lib").join("aarch64-windows-msvc");
     if arch_dir.exists() {
         println!("cargo:rustc-link-search=native={}", arch_dir.display());
+        println!("cargo:rerun-if-changed={}", arch_dir.display());
     } else {
         println!(
             "cargo:warning=Expected QNN lib dir not found: {}. \
-             Adjust qnn-sys/build.rs link path for your SDK layout.",
+             Adjust qnn-sys/build.rs for your SDK layout.",
             arch_dir.display()
         );
     }
-    // Link against the QNN system loader. Backend libs (QnnHtp.dll etc.)
-    // are loaded dynamically at runtime via QnnSystem.
-    println!("cargo:rustc-link-lib=dylib=QnnSystem");
 }
 
-fn emit_stub_bindings(out_dir: &PathBuf) {
+fn emit_stub_bindings(out_dir: &Path) {
     let stub = r#"// Stub bindings emitted because QNN_SDK_ROOT was not set.
 // Building qnn-sys with the real SDK requires QNN_SDK_ROOT to point at a
 // QNN SDK 2.44+ install. Without it, this crate exposes no FFI symbols and
 // any attempt to use it at runtime will panic.
-#![allow(non_camel_case_types, non_snake_case, non_upper_case_globals, dead_code)]
 
 pub const QNN_SDK_ROOT_NOT_SET: bool = true;
 "#;

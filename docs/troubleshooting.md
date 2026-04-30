@@ -51,6 +51,69 @@ py -3.11-64 -m venv .venv-x64
 pip install -e python\hex-convert
 ```
 
+## "link: extra operand ..." or "link.exe failed: exit code: 1" with weird args
+
+You're running `cargo` from a shell where the wrong `link.exe` is on `PATH`.
+On Windows, MSYS2 / Git Bash ship a GNU coreutils `link` at `/usr/bin/link.exe`
+that shadows MSVC's linker. Symptom: errors like
+
+```
+link: extra operand 'C:\\...\\rcgu.o'
+Try 'link --help' for more information.
+```
+
+The fix: build from a shell where MSVC's tools are first on `PATH`. The
+project ships `scripts\dev-shell.bat` for exactly this:
+
+```bat
+scripts\dev-shell.bat cargo check --workspace
+scripts\dev-shell.bat cargo build --release
+scripts\dev-shell.bat cargo test --workspace
+```
+
+Internally it loads `vcvarsall.bat arm64` and prepends `%USERPROFILE%\.cargo\bin`.
+You can also run cargo from a "Developer PowerShell for VS 2022" or the
+"x64_arm64 Cross Tools Command Prompt" — same effect.
+
+## "ring v0.17.x failed to find tool 'clang'"
+
+`ring` (pulled in transitively via `reqwest` → `rustls`) compiles ARM64
+assembly with clang. Install LLVM:
+
+```powershell
+winget install LLVM.LLVM
+```
+
+You will need it anyway for `bindgen` (the `qnn-sys` crate) once you set
+`QNN_SDK_ROOT`.
+
+## `qai-hub-models` export crashes with `UnicodeEncodeError 'charmap' codec`
+
+The qai-hub client prints a progress animation that includes Unicode emoji
+(e.g. ⏳). On Windows the default console encoding is `cp1252` which can't
+encode these. The export job *itself* may have already submitted on the
+cloud — the crash is purely the local progress printer.
+
+Fix: force Python to use UTF-8 for I/O before running:
+
+```bat
+set PYTHONIOENCODING=utf-8
+set PYTHONUTF8=1
+python -X utf8 -m qai_hub_models.models.<model>.export ...
+```
+
+Or in PowerShell:
+
+```powershell
+$env:PYTHONIOENCODING = "utf-8"
+$env:PYTHONUTF8 = "1"
+python -X utf8 -m qai_hub_models.models.<model>.export ...
+```
+
+If the crash already happened, re-run with `--model-cache-mode enable` so
+already-uploaded model shards aren't re-uploaded (uploads are the slow
+part — multiple GB).
+
 ## "First load is very slow"
 
 Compiling an ONNX into a QNN context binary takes 30–90 seconds. Subsequent

@@ -16,9 +16,7 @@ pub struct ServerState {
 }
 
 pub fn router(state: ServerState) -> Router {
-    Router::new()
-        .merge(openai::routes())
-        .with_state(state)
+    Router::new().merge(openai::routes()).with_state(state)
 }
 
 pub async fn serve(addr: SocketAddr, state: ServerState) -> Result<()> {

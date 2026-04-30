@@ -82,7 +82,10 @@ mod tests {
         if std::env::var_os("LOCALAPPDATA").is_some() {
             let p = default_cache_dir();
             let s = p.to_string_lossy();
-            assert!(s.ends_with("hexrun\\models") || s.ends_with("hexrun/models"), "got {s}");
+            assert!(
+                s.ends_with("hexrun\\models") || s.ends_with("hexrun/models"),
+                "got {s}"
+            );
         }
     }
 

@@ -2,7 +2,7 @@
 #
 # Validates a Qualcomm AI Engine Direct (QNN) SDK install on Windows ARM64
 # and confirms the Hexagon NPU is present. Does not download the SDK
-# (license forbids redistribution) — the user must install it from the
+# (license forbids redistribution) -- the user must install it from the
 # Qualcomm developer portal first.
 #
 # Usage:
@@ -109,7 +109,7 @@ if ([string]::IsNullOrWhiteSpace($SdkRoot)) {
             Write-Warn2 "could not parse version from sdk.yaml"
         }
     } else {
-        Write-Warn2 "sdk.yaml not found under $SdkRoot — version check skipped"
+        Write-Warn2 "sdk.yaml not found under $SdkRoot -- version check skipped"
     }
 }
 

@@ -141,8 +141,11 @@ mod tests {
             model_dir: PathBuf::from("definitely/does/not/exist/abcxyz"),
             ..Default::default()
         };
-        let err = Engine::load(cfg).unwrap_err();
-        assert!(matches!(err, EngineError::ModelDirMissing(_)));
+        match Engine::load(cfg) {
+            Err(EngineError::ModelDirMissing(_)) => {}
+            Err(other) => panic!("unexpected error variant: {other:?}"),
+            Ok(_) => panic!("expected an error from missing model_dir"),
+        }
     }
 
     #[test]

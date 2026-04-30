@@ -9,6 +9,7 @@ use std::cmp::Ordering;
 
 use thiserror::Error;
 
+/// Sampling configuration: temperature + nucleus + top-k.
 #[derive(Debug, Clone, Copy)]
 pub struct SamplerConfig {
     /// Higher = more random. Must be >= 0. Zero means greedy (argmax).
@@ -29,19 +30,25 @@ impl Default for SamplerConfig {
     }
 }
 
+/// Errors raised while validating or running the sampler.
 #[derive(Debug, Error)]
 pub enum SamplerError {
+    /// `temperature` was negative; only zero or positive values are allowed.
     #[error("temperature {0} is negative")]
     NegativeTemperature(f32),
+    /// `top_p` was outside the valid range `(0, 1]`.
     #[error("top_p {0} not in (0, 1]")]
     BadTopP(f32),
+    /// The logits slice passed to [`sample`] was empty.
     #[error("logits slice is empty")]
     EmptyLogits,
+    /// One or more logits were `NaN` or infinite.
     #[error("logits contained non-finite values")]
     NonFiniteLogits,
 }
 
 impl SamplerConfig {
+    /// Check that `temperature` and `top_p` are in their accepted ranges.
     pub fn validate(&self) -> Result<(), SamplerError> {
         if self.temperature < 0.0 {
             return Err(SamplerError::NegativeTemperature(self.temperature));
@@ -182,15 +189,23 @@ mod tests {
             temperature: -1.0,
             ..Default::default()
         };
-        assert!(matches!(cfg.validate(), Err(SamplerError::NegativeTemperature(_))));
+        assert!(matches!(
+            cfg.validate(),
+            Err(SamplerError::NegativeTemperature(_))
+        ));
     }
 
     #[test]
     fn rejects_bad_top_p() {
-        let mut cfg = SamplerConfig::default();
-        cfg.top_p = 1.5;
+        let cfg = SamplerConfig {
+            top_p: 1.5,
+            ..Default::default()
+        };
         assert!(matches!(cfg.validate(), Err(SamplerError::BadTopP(_))));
-        cfg.top_p = 0.0;
+        let cfg = SamplerConfig {
+            top_p: 0.0,
+            ..Default::default()
+        };
         assert!(matches!(cfg.validate(), Err(SamplerError::BadTopP(_))));
     }
 

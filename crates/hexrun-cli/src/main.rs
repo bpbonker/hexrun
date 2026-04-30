@@ -4,7 +4,11 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
-#[command(name = "hexrun", about = "NPU-first local LLM runtime for Snapdragon X Elite", version)]
+#[command(
+    name = "hexrun",
+    about = "NPU-first local LLM runtime for Snapdragon X Elite",
+    version
+)]
 struct Cli {
     #[command(subcommand)]
     cmd: Cmd,

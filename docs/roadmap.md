@@ -56,13 +56,13 @@ Goal: quantify the NPU's energy efficiency claim with measured data.
 |---|---|---:|---|
 | E1 | Energy measurement script | done | `scripts/energy-bench.ps1` samples `Win32_Battery.DischargeRate` at 2 Hz on battery; computes idle vs. busy delta, total inference energy, joules per token. Phi 3.5 Mini result: **~1.27 J/token at 6.9 W delta**. Captured in `docs/benchmarks.md`. |
 
-## Wave F — Real chat performance (~3 hr)
+## Wave F — Real chat performance (done 2026-05-01)
 
 Goal: turn 2+ of a multi-turn conversation is fast.
 
 | # | Item | Effort | Notes |
 |---|---|---:|---|
-| F1 | Multi-turn KV-cache rewind via `GENIE_DIALOG_SENTENCE_REWIND` | 3 hr | Track the prompt prefix; on next request, replay only the new tokens. Real lift for chat UX. Substantial work. |
+| F1 | Multi-turn KV-cache rewind via `GENIE_DIALOG_SENTENCE_REWIND` | done | First chat call on a fresh dialog goes through with `SentenceCode::Complete`, populating the KV cache. Every subsequent call passes the full transcript with `SentenceCode::Rewind`; Genie matches the prefix and re-prefills only the new tokens. Multi-turn fields (`assistant_turn`, `next_user_turn`) added to `ChatTemplate`; OpenAI + Ollama chat surfaces thread the full messages array through `Engine::generate_chat_streaming`. Verified on Phi 3.5 Mini end-to-end. |
 
 ## Beyond v0.1.0 — explicitly deferred
 

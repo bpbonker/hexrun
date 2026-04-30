@@ -188,10 +188,11 @@ with HTTP 429 + `Retry-After: 1` rather than queued indefinitely.
 - [x] Ollama parity: `:latest` aliases, `/api/version`, `/api/show`,
   `/api/delete`, `hexrun ps` against a running server
 - [x] Energy measurement: ~1.27 J/token at ~6.9 W delta on Phi 3.5 Mini
+- [x] Multi-turn chat via Genie KV-cache prefix matching
+  (`SentenceCode::Rewind`) — turn N pays the prefill cost only for
+  the new tokens, not the whole transcript
 
 **In progress:**
-
-- [ ] Multi-turn KV-cache rewind (real chat performance on turn 2+)
 - [ ] Phase 5: `hex-convert` Python pipeline (HF → ONNX → AI Hub →
   bundle); remote registry beyond the hardcoded list
 - [ ] Phase 6: signed Windows MSIX installer, winget manifest, CI matrix,

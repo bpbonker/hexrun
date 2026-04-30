@@ -16,7 +16,7 @@ use axum::routing::{get, post};
 use axum::Json;
 use axum::Router;
 use futures::stream::Stream;
-use hexrun_core::Engine;
+use hexrun_core::{ChatMessage as CoreChatMessage, ChatRole, Engine};
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 use tokio::sync::OwnedSemaphorePermit;
@@ -331,13 +331,7 @@ async fn api_generate(
     info!(model = %model_name, stream = req.stream, "ollama /api/generate");
 
     if req.stream {
-        let stream = ndjson_stream(
-            engine,
-            permit,
-            req.prompt,
-            model_name,
-            ResponseShape::Generate,
-        );
+        let stream = ndjson_stream(engine, permit, req.prompt, model_name);
         ndjson_response(stream).into_response()
     } else {
         match run_blocking(engine, permit, req.prompt).await {
@@ -367,29 +361,36 @@ async fn api_chat(State(state): State<ServerState>, Json(req): Json<ChatRequest>
         .clone()
         .or_else(|| state.model_name.clone())
         .unwrap_or_else(|| "hexrun".to_string());
-    let user_msg = match req
+    let messages: Vec<CoreChatMessage> = req
         .messages
         .iter()
-        .rev()
-        .find(|m| m.role == "user")
-        .map(|m| m.content.clone())
-    {
-        Some(p) => p,
-        None => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(serde_json::json!({"error": "no user message in request"})),
-            )
-                .into_response()
-        }
-    };
-    info!(model = %model_name, stream = req.stream, "ollama /api/chat");
+        .filter_map(|m| {
+            let role = match m.role.as_str() {
+                "system" => ChatRole::System,
+                "user" => ChatRole::User,
+                "assistant" => ChatRole::Assistant,
+                _ => return None,
+            };
+            Some(CoreChatMessage {
+                role,
+                content: m.content.clone(),
+            })
+        })
+        .collect();
+    if !messages.iter().any(|m| m.role == ChatRole::User) {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error": "no user message in request"})),
+        )
+            .into_response();
+    }
+    info!(model = %model_name, stream = req.stream, turns = messages.len(), "ollama /api/chat");
 
     if req.stream {
-        let stream = ndjson_stream(engine, permit, user_msg, model_name, ResponseShape::Chat);
+        let stream = ndjson_chat_stream(engine, permit, messages, model_name);
         ndjson_response(stream).into_response()
     } else {
-        match run_blocking(engine, permit, user_msg).await {
+        match run_blocking_chat(engine, permit, messages).await {
             Ok(text) => Json(serde_json::json!({
                 "model": model_name,
                 "created_at": now_iso8601(),
@@ -414,12 +415,6 @@ fn busy_response() -> Response {
         .into_response()
 }
 
-#[derive(Clone, Copy)]
-enum ResponseShape {
-    Generate,
-    Chat,
-}
-
 async fn run_blocking(
     engine: Arc<Engine>,
     permit: OwnedSemaphorePermit,
@@ -428,6 +423,19 @@ async fn run_blocking(
     tokio::task::spawn_blocking(move || {
         let _permit = permit;
         engine.generate(&prompt).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("inference task panicked: {e}"))?
+}
+
+async fn run_blocking_chat(
+    engine: Arc<Engine>,
+    permit: OwnedSemaphorePermit,
+    messages: Vec<CoreChatMessage>,
+) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || {
+        let _permit = permit;
+        engine.generate_chat(&messages).map_err(|e| e.to_string())
     })
     .await
     .map_err(|e| format!("inference task panicked: {e}"))?
@@ -444,12 +452,14 @@ fn inference_error(msg: &str) -> Response {
         .into_response()
 }
 
+/// NDJSON stream for `/api/generate` — single-prompt completion. Uses
+/// `Engine::generate_streaming` and emits `GenerateChunk`-shaped frames.
+/// `/api/chat` uses [`ndjson_chat_stream`] instead.
 fn ndjson_stream(
     engine: Arc<Engine>,
     permit: OwnedSemaphorePermit,
     user_prompt: String,
     model_name: String,
-    shape: ResponseShape,
 ) -> impl Stream<Item = Result<axum::body::Bytes, Infallible>> {
     let (tx, rx) = mpsc::channel::<StreamItem>(64);
     let tx_clone = tx.clone();
@@ -472,8 +482,8 @@ fn ndjson_stream(
 
     ReceiverStream::new(rx).map(move |item| {
         let now = now_iso8601();
-        let bytes = match (shape, item) {
-            (ResponseShape::Generate, StreamItem::Content(s)) => {
+        let bytes = match item {
+            StreamItem::Content(s) => {
                 let chunk = GenerateChunk {
                     model: &model_name,
                     created_at: now,
@@ -484,7 +494,7 @@ fn ndjson_stream(
                 v.push(b'\n');
                 v
             }
-            (ResponseShape::Generate, StreamItem::Done) => {
+            StreamItem::Done => {
                 let chunk = GenerateChunk {
                     model: &model_name,
                     created_at: now,
@@ -495,7 +505,49 @@ fn ndjson_stream(
                 v.push(b'\n');
                 v
             }
-            (ResponseShape::Chat, StreamItem::Content(s)) => {
+            StreamItem::Error(msg) => {
+                let payload = serde_json::json!({"error": msg});
+                let mut v = serde_json::to_vec(&payload).unwrap_or_default();
+                v.push(b'\n');
+                v
+            }
+        };
+        Ok(axum::body::Bytes::from(bytes))
+    })
+}
+
+/// NDJSON stream variant that drives `Engine::generate_chat_streaming`
+/// against the full messages array (not just the latest user message).
+/// Always emits `ChatChunk` shaped responses — `/api/chat` only.
+fn ndjson_chat_stream(
+    engine: Arc<Engine>,
+    permit: OwnedSemaphorePermit,
+    messages: Vec<CoreChatMessage>,
+    model_name: String,
+) -> impl Stream<Item = Result<axum::body::Bytes, Infallible>> {
+    let (tx, rx) = mpsc::channel::<StreamItem>(64);
+    let tx_clone = tx.clone();
+    tokio::task::spawn_blocking(move || {
+        let _permit = permit;
+        let res = engine.generate_chat_streaming(&messages, |chunk| {
+            let _ = tx_clone.blocking_send(StreamItem::Content(chunk.to_string()));
+        });
+        match res {
+            Ok(()) => {
+                let _ = tx_clone.blocking_send(StreamItem::Done);
+            }
+            Err(e) => {
+                error!(error = %e, "ollama streaming chat inference failed");
+                let _ = tx_clone.blocking_send(StreamItem::Error(e.to_string()));
+            }
+        }
+    });
+    drop(tx);
+
+    ReceiverStream::new(rx).map(move |item| {
+        let now = now_iso8601();
+        let bytes = match item {
+            StreamItem::Content(s) => {
                 let chunk = ChatChunk {
                     model: &model_name,
                     created_at: now,
@@ -509,7 +561,7 @@ fn ndjson_stream(
                 v.push(b'\n');
                 v
             }
-            (ResponseShape::Chat, StreamItem::Done) => {
+            StreamItem::Done => {
                 let chunk = ChatChunk {
                     model: &model_name,
                     created_at: now,
@@ -523,7 +575,7 @@ fn ndjson_stream(
                 v.push(b'\n');
                 v
             }
-            (_, StreamItem::Error(msg)) => {
+            StreamItem::Error(msg) => {
                 let payload = serde_json::json!({"error": msg});
                 let mut v = serde_json::to_vec(&payload).unwrap_or_default();
                 v.push(b'\n');

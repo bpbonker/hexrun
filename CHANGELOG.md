@@ -141,10 +141,40 @@ All notable changes to hexrun will be documented here. Format follows
   paths are kept for documentation; the canonical user-facing
   workflow is now `hexrun pull → run → serve`.
 
-### Pending for v0.1.0
+### Added — multi-turn chat
 
-- Multi-turn KV-cache rewind via Genie's `SENTENCE_REWIND` (real chat
-  performance on turn 2+).
+- `qnn::Dialog::query_streaming_with` accepts an input
+  `SentenceCode`. The Phase-4 `query_streaming` keeps its
+  COMPLETE-only behaviour and is now a thin shim over the new
+  function.
+- `ChatTemplate` gained two optional fields, `assistant_turn` and
+  `next_user_turn`, plus a `wrap_chat(messages)` method that builds
+  a full multi-turn transcript from a `[ChatMessage]` slice. Single-
+  turn bundles without the new fields fall back to wrapping the most
+  recent user message via `template` (preserving Phase 4 behaviour).
+- New canonical types `hexrun_core::ChatMessage` and
+  `hexrun_core::ChatRole` for crossing the HTTP-handler / engine
+  boundary.
+- `Engine::generate_chat` and `Engine::generate_chat_streaming` accept
+  a full message history. The first call on a fresh dialog is sent
+  with `SentenceCode::Complete` (populates the KV cache); every
+  subsequent call uses `SentenceCode::Rewind` so Genie matches the
+  transcript prefix against the cache and re-prefills only the new
+  tokens. `Engine::reset_chat` drops the cache and forces the next
+  call back to `Complete`.
+- The HTTP server's `/v1/chat/completions` and `/api/chat` now thread
+  the full `messages` array through the engine instead of extracting
+  only the latest user message — multi-turn conversations actually
+  preserve context across turns. `/api/generate` is unchanged
+  (single-shot completions).
+- The built-in registry's chat templates carry the new
+  `assistant_turn` / `next_user_turn` fields for Phi 3, Llama 3, and
+  Qwen 2.5; new pulls produce multi-turn-capable manifests.
+- Verified on hardware against `phi-3.5-mini`: turn-2 questions about
+  facts established in turn 1 are answered correctly, on both
+  blocking and streaming paths, on both OpenAI and Ollama surfaces.
+
+### Pending for v0.1.0
 - README walkthrough screenshot/recording.
 - `hex-convert` Python pipeline for HF → bundle conversion (Phase 5).
 - Signed Windows MSIX installer + winget manifest (Phase 6).

@@ -145,6 +145,20 @@ impl SentenceCode {
     }
 }
 
+fn sentence_code_to_raw(code: SentenceCode) -> sys::GenieDialog_SentenceCode_t {
+    let raw: u32 = match code {
+        SentenceCode::Complete => 0,
+        SentenceCode::Begin => 1,
+        SentenceCode::Continue => 2,
+        SentenceCode::End => 3,
+        SentenceCode::Abort => 4,
+        SentenceCode::Rewind => 5,
+        SentenceCode::Resume => 6,
+        SentenceCode::Other(o) => o,
+    };
+    raw as sys::GenieDialog_SentenceCode_t
+}
+
 /// Internal RAII wrapper around `GenieDialogConfig_Handle_t`.
 struct Config {
     handle: sys::GenieDialogConfig_Handle_t,
@@ -288,10 +302,44 @@ impl Dialog {
 
     /// Run a query and invoke `callback` for each response chunk.
     ///
+    /// Equivalent to [`Self::query_streaming_with`] called with
+    /// [`SentenceCode::Complete`] — Genie treats the prompt as a fresh,
+    /// self-contained query and resets generation state for it.
+    ///
     /// The callback is invoked synchronously from the C library, on the
     /// same thread that called this function. The function returns when
     /// Genie reports completion (or an error).
-    pub fn query_streaming<F>(&self, prompt: &str, mut callback: F) -> Result<(), GenieError>
+    pub fn query_streaming<F>(&self, prompt: &str, callback: F) -> Result<(), GenieError>
+    where
+        F: FnMut(&str, SentenceCode),
+    {
+        self.query_streaming_with(prompt, SentenceCode::Complete, callback)
+    }
+
+    /// Run a query with an explicit input [`SentenceCode`].
+    ///
+    /// The sentence code tells Genie how to interpret the prompt relative
+    /// to any prior turns held in this dialog's KV cache:
+    ///
+    /// - [`SentenceCode::Complete`] — prompt is a self-contained query
+    ///   (single-turn). Genie does not preserve nor look up KV state.
+    /// - [`SentenceCode::Begin`] — prompt is the first sentence of a
+    ///   multi-turn flow.
+    /// - [`SentenceCode::Continue`] — prompt is a continuation of an
+    ///   ongoing multi-turn flow.
+    /// - [`SentenceCode::End`] — prompt closes a multi-turn flow.
+    /// - [`SentenceCode::Rewind`] — prompt is a fresh transcript that
+    ///   shares a prefix with what's already in the KV cache. Genie
+    ///   matches the prefix, rewinds to the divergence point, and
+    ///   re-prefills only the suffix. This is the multi-turn fast path:
+    ///   send the full transcript every turn and pay the prefill cost
+    ///   only on the new tokens.
+    pub fn query_streaming_with<F>(
+        &self,
+        prompt: &str,
+        code: SentenceCode,
+        mut callback: F,
+    ) -> Result<(), GenieError>
     where
         F: FnMut(&str, SentenceCode),
     {
@@ -304,6 +352,8 @@ impl Dialog {
             callback: &mut callback,
         };
 
+        let raw_code = sentence_code_to_raw(code);
+
         // SAFETY: cstr is a valid null-terminated string for the duration of
         // the call; user_data lives on the stack until after the C call
         // returns; the callback function pointer is `extern "C"`.
@@ -311,7 +361,7 @@ impl Dialog {
             sys::GenieDialog_query(
                 self.handle,
                 cstr.as_ptr(),
-                sys::GenieDialog_SentenceCode_t_GENIE_DIALOG_SENTENCE_COMPLETE,
+                raw_code,
                 Some(query_callback::<F>),
                 &mut user_data as *mut UserData<F> as *const c_void,
             )

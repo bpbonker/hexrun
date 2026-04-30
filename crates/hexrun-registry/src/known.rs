@@ -32,8 +32,14 @@ pub struct KnownModel {
 pub struct ChatTemplateSpec {
     /// System prompt to use when none is supplied.
     pub system_prompt: &'static str,
-    /// Format string with `{system}` and `{user}` placeholders.
+    /// First-turn format with `{system}` and `{user}` placeholders.
     pub template: &'static str,
+    /// Format for an assistant turn in a multi-turn transcript, with a
+    /// single `{assistant}` placeholder.
+    pub assistant_turn: &'static str,
+    /// Format for a follow-up user turn in a multi-turn transcript,
+    /// with a single `{user}` placeholder.
+    pub next_user_turn: &'static str,
 }
 
 /// Built-in registry. Public so the CLI's `pull` command can list them.
@@ -48,6 +54,8 @@ pub const KNOWN_MODELS: &[KnownModel] = &[
         chat_template: ChatTemplateSpec {
             system_prompt: "You are a concise assistant. Answer in 1-2 sentences.",
             template: "<|system|>\n{system}<|end|>\n<|user|>\n{user}<|end|>\n<|assistant|>\n",
+            assistant_turn: "{assistant}<|end|>\n",
+            next_user_turn: "<|user|>\n{user}<|end|>\n<|assistant|>\n",
         },
     },
     KnownModel {
@@ -60,6 +68,8 @@ pub const KNOWN_MODELS: &[KnownModel] = &[
         chat_template: ChatTemplateSpec {
             system_prompt: "You are a concise assistant.",
             template: "<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\n{system}<|eot_id|><|start_header_id|>user<|end_header_id|>\n\n{user}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n",
+            assistant_turn: "{assistant}<|eot_id|>",
+            next_user_turn: "<|start_header_id|>user<|end_header_id|>\n\n{user}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n",
         },
     },
     KnownModel {
@@ -72,6 +82,8 @@ pub const KNOWN_MODELS: &[KnownModel] = &[
         chat_template: ChatTemplateSpec {
             system_prompt: "You are a concise assistant. Answer in 1-2 sentences.",
             template: "<|im_start|>system\n{system}<|im_end|>\n<|im_start|>user\n{user}<|im_end|>\n<|im_start|>assistant\n",
+            assistant_turn: "{assistant}<|im_end|>\n",
+            next_user_turn: "<|im_start|>user\n{user}<|im_end|>\n<|im_start|>assistant\n",
         },
     },
 ];

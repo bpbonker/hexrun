@@ -18,5 +18,7 @@ pub mod manifest;
 pub mod sampler;
 
 pub use engine::{Backend, Engine, EngineConfig, EngineError};
-pub use manifest::{ChatTemplate, Manifest, ManifestError, ManifestFiles, Quant};
+pub use manifest::{
+    ChatMessage, ChatRole, ChatTemplate, Manifest, ManifestError, ManifestFiles, Quant,
+};
 pub use sampler::{sample, SamplerConfig, SamplerError};

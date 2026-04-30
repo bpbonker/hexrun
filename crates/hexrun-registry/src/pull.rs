@@ -370,6 +370,8 @@ fn write_manifest(
         chat_template: Some(ChatTemplate {
             system_prompt: known.chat_template.system_prompt.to_string(),
             template: known.chat_template.template.to_string(),
+            assistant_turn: Some(known.chat_template.assistant_turn.to_string()),
+            next_user_turn: Some(known.chat_template.next_user_turn.to_string()),
         }),
         sha256,
     };

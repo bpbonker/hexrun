@@ -17,7 +17,7 @@ use axum::routing::{get, post};
 use axum::Json;
 use axum::Router;
 use futures::stream::Stream;
-use hexrun_core::Engine;
+use hexrun_core::{ChatMessage as CoreChatMessage, ChatRole, Engine};
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 use tokio::sync::OwnedSemaphorePermit;
@@ -170,21 +170,36 @@ async fn chat_completions(
         }
     };
 
-    // Pull the most recent user message; ignore everything else for the
-    // current Phase 4 implementation. Multi-turn conversation will be
-    // wired through Genie's KV-cache rewind in a later phase.
-    let user_prompt = match latest_user_message(&req.messages) {
-        Some(p) => p,
-        None => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(serde_json::json!({
-                    "error": { "message": "no user message in request", "type": "bad_request" }
-                })),
-            )
-                .into_response();
-        }
-    };
+    // Convert the request's messages to the engine's canonical
+    // representation. The engine builds the full transcript via the
+    // bundle's chat template and sends it to Genie with
+    // `SentenceCode::Rewind`, so multi-turn replay reuses the KV
+    // cache prefix instead of re-prefilling from scratch.
+    let messages: Vec<CoreChatMessage> = req
+        .messages
+        .iter()
+        .filter_map(|m| {
+            let role = match m.role.as_str() {
+                "system" => ChatRole::System,
+                "user" => ChatRole::User,
+                "assistant" => ChatRole::Assistant,
+                _ => return None, // tool/function roles are silently dropped
+            };
+            Some(CoreChatMessage {
+                role,
+                content: m.content.clone(),
+            })
+        })
+        .collect();
+    if !messages.iter().any(|m| m.role == ChatRole::User) {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({
+                "error": { "message": "no user message in request", "type": "bad_request" }
+            })),
+        )
+            .into_response();
+    }
 
     // Reserve the inference slot before doing any heavy work. If the
     // server is already running another request, return 429.
@@ -217,16 +232,16 @@ async fn chat_completions(
     info!(
         model = %model_name,
         stream = req.stream,
-        user_msg_chars = user_prompt.chars().count(),
+        turns = messages.len(),
         "chat completion request"
     );
 
     if req.stream {
-        chat_completions_streaming(engine, permit, user_prompt, model_name, id, created)
+        chat_completions_streaming(engine, permit, messages, model_name, id, created)
             .await
             .into_response()
     } else {
-        chat_completions_blocking(engine, permit, user_prompt, model_name, id, created)
+        chat_completions_blocking(engine, permit, messages, model_name, id, created)
             .await
             .into_response()
     }
@@ -235,14 +250,14 @@ async fn chat_completions(
 async fn chat_completions_blocking(
     engine: Arc<Engine>,
     permit: OwnedSemaphorePermit,
-    user_prompt: String,
+    messages: Vec<CoreChatMessage>,
     model_name: String,
     id: String,
     created: u64,
 ) -> axum::response::Response {
     let join = tokio::task::spawn_blocking(move || {
         let _permit = permit; // released when this closure returns
-        engine.generate(&user_prompt).map_err(|e| e.to_string())
+        engine.generate_chat(&messages).map_err(|e| e.to_string())
     })
     .await;
 
@@ -293,7 +308,7 @@ async fn chat_completions_blocking(
 async fn chat_completions_streaming(
     engine: Arc<Engine>,
     permit: OwnedSemaphorePermit,
-    user_prompt: String,
+    messages: Vec<CoreChatMessage>,
     model_name: String,
     id: String,
     created: u64,
@@ -310,7 +325,7 @@ async fn chat_completions_streaming(
 
     tokio::task::spawn_blocking(move || {
         let _permit = permit; // released when the closure returns
-        let res = engine.generate_streaming(&user_prompt, |chunk| {
+        let res = engine.generate_chat_streaming(&messages, |chunk| {
             let _ = tx_clone.blocking_send(StreamItem::Content(chunk.to_string()));
         });
         match res {
@@ -399,14 +414,6 @@ enum StreamItem {
     Content(String),
     Done,
     Error(String),
-}
-
-fn latest_user_message(messages: &[ChatMessage]) -> Option<String> {
-    messages
-        .iter()
-        .rev()
-        .find(|m| m.role == "user")
-        .map(|m| m.content.clone())
 }
 
 fn unix_now() -> u64 {

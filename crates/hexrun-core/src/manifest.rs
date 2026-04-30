@@ -92,25 +92,176 @@ pub struct ManifestFiles {
     pub genie_config: Option<String>,
 }
 
-/// Chat-template configuration. Holds a system-prompt default plus a
-/// format string with `{system}` and `{user}` placeholders.
+/// Chat-template configuration. Drives both single-turn wrapping (the
+/// CLI's `hexrun run` and `hexrun bench`) and multi-turn transcript
+/// construction (the HTTP server's `/v1/chat/completions` and
+/// `/api/chat` endpoints).
+///
+/// For single-turn wrapping the [`Self::wrap`] method substitutes
+/// `{system}` and `{user}` into [`Self::template`]. For multi-turn
+/// transcripts, [`Self::wrap_chat`] additionally uses
+/// [`Self::assistant_turn`] (formats a previous assistant reply) and
+/// [`Self::next_user_turn`] (opens a new user turn). The two extra
+/// fields are optional; without them, `wrap_chat` falls back to the
+/// last user message wrapped via [`Self::template`] (turn-1 only — fine
+/// for single-turn API requests).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatTemplate {
     /// Default system prompt (substituted into `{system}` in `template`).
     pub system_prompt: String,
-    /// Format string with `{system}` and `{user}` placeholders. Should
-    /// terminate with the model's "assistant turn starts here" marker so
-    /// generation begins with the assistant's response.
+    /// Format string for the first turn (system + first user message).
+    /// `{system}` and `{user}` placeholders. Must end at the
+    /// "assistant turn starts here" marker so generation begins with
+    /// the assistant's response.
     pub template: String,
+    /// Optional format string for an assistant message in the
+    /// transcript, with a single `{assistant}` placeholder. Required
+    /// for multi-turn chat. Example for Phi 3:
+    /// `"{assistant}<|end|>\n"`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub assistant_turn: Option<String>,
+    /// Optional format string for a follow-up user turn, with a single
+    /// `{user}` placeholder. Must terminate at the "assistant turn
+    /// starts here" marker. Required for multi-turn chat. Example for
+    /// Phi 3: `"<|user|>\n{user}<|end|>\n<|assistant|>\n"`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next_user_turn: Option<String>,
+}
+
+/// Role of a chat message. Mirrors the OpenAI / Ollama API enum.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChatRole {
+    /// System / instruction message. Only the first such message is
+    /// honoured; the rest are merged into the conversation as if user.
+    System,
+    /// A user (human) turn.
+    User,
+    /// An assistant (model) turn.
+    Assistant,
+}
+
+/// A single chat message. Lightweight, owned, suitable for crossing the
+/// HTTP-handler / engine boundary without lifetime gymnastics.
+#[derive(Debug, Clone)]
+pub struct ChatMessage {
+    /// The role of the speaker.
+    pub role: ChatRole,
+    /// Message content (plain text — multimodal is out of scope).
+    pub content: String,
 }
 
 impl ChatTemplate {
-    /// Wrap a user prompt using the template. `{system}` is replaced with
-    /// `self.system_prompt`; `{user}` with the supplied prompt.
+    /// Wrap a single user prompt using the first-turn template.
+    /// `{system}` is replaced with [`Self::system_prompt`]; `{user}`
+    /// with the supplied prompt.
     pub fn wrap(&self, user: &str) -> String {
         self.template
             .replace("{system}", &self.system_prompt)
             .replace("{user}", user)
+    }
+
+    /// Build a full multi-turn transcript from a sequence of chat
+    /// messages.
+    ///
+    /// Behaviour:
+    ///
+    /// 1. The first `system` message in `messages` (if any) overrides
+    ///    [`Self::system_prompt`]. Other system messages are ignored.
+    /// 2. The first user message is rendered through [`Self::template`]
+    ///    along with the chosen system prompt.
+    /// 3. Each subsequent assistant message is rendered through
+    ///    [`Self::assistant_turn`].
+    /// 4. Each subsequent user message is rendered through
+    ///    [`Self::next_user_turn`].
+    /// 5. The transcript ends with the assistant marker open — i.e.
+    ///    Genie generates the next assistant turn.
+    ///
+    /// If [`Self::assistant_turn`] or [`Self::next_user_turn`] is not
+    /// set on this template, multi-turn rendering degrades to using
+    /// only the most recent user message via [`Self::template`]. This
+    /// keeps single-turn bundles working while older bundles without
+    /// the extra fields are still readable.
+    ///
+    /// Returns `None` if there is no user message at all (caller should
+    /// reject the request as malformed).
+    pub fn wrap_chat(&self, messages: &[ChatMessage]) -> Option<String> {
+        // Pick the system prompt: explicit `system` message wins, else
+        // the template's default.
+        let system = messages
+            .iter()
+            .find(|m| m.role == ChatRole::System)
+            .map(|m| m.content.as_str())
+            .unwrap_or(&self.system_prompt);
+
+        // Filter out system messages — we've already extracted the one
+        // that matters.
+        let turns: Vec<&ChatMessage> = messages
+            .iter()
+            .filter(|m| m.role != ChatRole::System)
+            .collect();
+
+        if turns.is_empty() {
+            return None;
+        }
+
+        // Multi-turn requires both extra fields. Fall back to single-turn
+        // when either is missing: just wrap the most recent user message
+        // through `template`. (This is the same behaviour as the
+        // pre-multi-turn server; preserves backward compat.)
+        let (Some(asst_t), Some(user_t)) = (&self.assistant_turn, &self.next_user_turn) else {
+            let last_user = turns
+                .iter()
+                .rev()
+                .find(|m| m.role == ChatRole::User)
+                .map(|m| m.content.as_str())?;
+            let wrapped = self
+                .template
+                .replace("{system}", system)
+                .replace("{user}", last_user);
+            return Some(wrapped);
+        };
+
+        // Walk the turns in order. The first user turn opens via
+        // `template` (which carries the system block); subsequent user
+        // turns open via `next_user_turn`; assistant turns close via
+        // `assistant_turn`.
+        let mut out = String::new();
+        let mut first_user_emitted = false;
+        for m in turns {
+            match m.role {
+                ChatRole::User => {
+                    if !first_user_emitted {
+                        out.push_str(
+                            &self
+                                .template
+                                .replace("{system}", system)
+                                .replace("{user}", &m.content),
+                        );
+                        first_user_emitted = true;
+                    } else {
+                        out.push_str(&user_t.replace("{user}", &m.content));
+                    }
+                }
+                ChatRole::Assistant => {
+                    // An assistant turn that arrives before the first
+                    // user turn doesn't really make sense — the OpenAI
+                    // / Ollama wire format expects a user message to
+                    // open the conversation. Skip it; ill-formed
+                    // requests degrade to the same behaviour as if
+                    // the assistant turn weren't there.
+                    if !first_user_emitted {
+                        continue;
+                    }
+                    out.push_str(&asst_t.replace("{assistant}", &m.content));
+                }
+                ChatRole::System => unreachable!("system filtered above"),
+            }
+        }
+
+        if !first_user_emitted {
+            return None;
+        }
+        Some(out)
     }
 }
 
@@ -332,6 +483,8 @@ mod tests {
                 system_prompt: "You are a helpful assistant.".into(),
                 template: "<|system|>\n{system}<|end|>\n<|user|>\n{user}<|end|>\n<|assistant|>\n"
                     .into(),
+                assistant_turn: Some("{assistant}<|end|>\n".into()),
+                next_user_turn: Some("<|user|>\n{user}<|end|>\n<|assistant|>\n".into()),
             }),
             sha256: BTreeMap::new(),
         }
@@ -418,6 +571,8 @@ mod tests {
         m.chat_template = Some(ChatTemplate {
             system_prompt: "x".into(),
             template: "no placeholder".into(),
+            assistant_turn: None,
+            next_user_turn: None,
         });
         assert!(matches!(m.validate(), Err(ManifestError::Invalid(_))));
     }
@@ -427,8 +582,82 @@ mod tests {
         let t = ChatTemplate {
             system_prompt: "be helpful".into(),
             template: "[S]{system}[U]{user}[A]".into(),
+            assistant_turn: None,
+            next_user_turn: None,
         };
         assert_eq!(t.wrap("hi"), "[S]be helpful[U]hi[A]");
+    }
+
+    fn multi_turn_template() -> ChatTemplate {
+        ChatTemplate {
+            system_prompt: "default-system".into(),
+            template: "[S]{system}[U]{user}[A]".into(),
+            assistant_turn: Some("{assistant}[/A]".into()),
+            next_user_turn: Some("[U]{user}[A]".into()),
+        }
+    }
+
+    #[test]
+    fn wrap_chat_single_user_turn() {
+        let t = multi_turn_template();
+        let msgs = vec![ChatMessage {
+            role: ChatRole::User,
+            content: "hello".into(),
+        }];
+        assert_eq!(t.wrap_chat(&msgs).unwrap(), "[S]default-system[U]hello[A]");
+    }
+
+    #[test]
+    fn wrap_chat_multi_turn() {
+        let t = multi_turn_template();
+        let msgs = vec![
+            ChatMessage { role: ChatRole::User, content: "u1".into() },
+            ChatMessage { role: ChatRole::Assistant, content: "a1".into() },
+            ChatMessage { role: ChatRole::User, content: "u2".into() },
+        ];
+        assert_eq!(
+            t.wrap_chat(&msgs).unwrap(),
+            "[S]default-system[U]u1[A]a1[/A][U]u2[A]"
+        );
+    }
+
+    #[test]
+    fn wrap_chat_explicit_system_overrides_default() {
+        let t = multi_turn_template();
+        let msgs = vec![
+            ChatMessage { role: ChatRole::System, content: "be terse".into() },
+            ChatMessage { role: ChatRole::User, content: "hi".into() },
+        ];
+        assert_eq!(t.wrap_chat(&msgs).unwrap(), "[S]be terse[U]hi[A]");
+    }
+
+    #[test]
+    fn wrap_chat_falls_back_when_multi_turn_fields_missing() {
+        // Single-turn-only template: no assistant_turn / next_user_turn.
+        // wrap_chat should still produce something usable, taking the
+        // last user message and rendering it via `template`.
+        let t = ChatTemplate {
+            system_prompt: "sys".into(),
+            template: "[S]{system}[U]{user}[A]".into(),
+            assistant_turn: None,
+            next_user_turn: None,
+        };
+        let msgs = vec![
+            ChatMessage { role: ChatRole::User, content: "u1".into() },
+            ChatMessage { role: ChatRole::Assistant, content: "a1".into() },
+            ChatMessage { role: ChatRole::User, content: "u2".into() },
+        ];
+        assert_eq!(t.wrap_chat(&msgs).unwrap(), "[S]sys[U]u2[A]");
+    }
+
+    #[test]
+    fn wrap_chat_returns_none_when_no_user_message() {
+        let t = multi_turn_template();
+        let msgs = vec![ChatMessage {
+            role: ChatRole::Assistant,
+            content: "a".into(),
+        }];
+        assert!(t.wrap_chat(&msgs).is_none());
     }
 
     #[test]

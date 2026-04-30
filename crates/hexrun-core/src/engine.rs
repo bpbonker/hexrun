@@ -5,13 +5,15 @@
 //! the feature, `Engine::generate` returns [`EngineError::FeatureDisabled`].
 
 use std::path::PathBuf;
+#[cfg(feature = "genie")]
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use thiserror::Error;
 #[cfg(feature = "genie")]
 use tracing::debug;
 use tracing::info;
 
-use crate::manifest::{Manifest, ManifestError};
+use crate::manifest::{ChatMessage, Manifest, ManifestError};
 
 /// Inference backend selection.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -69,6 +71,16 @@ pub enum EngineError {
     #[cfg(feature = "genie")]
     #[error(transparent)]
     Genie(#[from] qnn::GenieError),
+    /// A chat request had no user message in it.
+    #[error("chat request contained no user message")]
+    NoUserMessage,
+    /// A chat request was sent to a model whose manifest doesn't
+    /// declare a chat template.
+    #[error("model {name} has no chat_template; cannot run multi-turn chat")]
+    NoChatTemplate {
+        /// Manifest name of the model.
+        name: String,
+    },
 }
 
 /// Loaded inference engine.
@@ -77,6 +89,14 @@ pub struct Engine {
     config: EngineConfig,
     #[cfg(feature = "genie")]
     dialog: qnn::Dialog,
+    /// Tracks whether the dialog's KV cache has been primed by at least
+    /// one chat call. Genie rejects `SentenceCode::Rewind` (with
+    /// `ERROR_QUERY_FAILED`) when the cache is empty — the first turn
+    /// of a fresh dialog must use `Begin`. After that, every subsequent
+    /// call uses `Rewind` so Genie can prefix-match the transcript and
+    /// only re-prefill the new tokens.
+    #[cfg(feature = "genie")]
+    chat_started: AtomicBool,
 }
 
 impl Engine {
@@ -126,6 +146,7 @@ impl Engine {
             manifest,
             config,
             dialog,
+            chat_started: AtomicBool::new(false),
         })
     }
 
@@ -174,6 +195,91 @@ impl Engine {
         Ok(())
     }
 
+    /// Run a multi-turn chat query against a full message history and
+    /// invoke `callback` for each response chunk.
+    ///
+    /// Builds the transcript via the manifest's chat template, then
+    /// sends it to Genie with [`qnn::SentenceCode::Rewind`]. On the
+    /// first call the dialog's KV cache is empty, so Rewind degrades
+    /// to a fresh prefill. On subsequent calls Genie matches the
+    /// transcript prefix against what's already in the cache and
+    /// re-prefills only the new tokens — which on a typical chat is
+    /// just the latest assistant reply (already in cache from the
+    /// previous turn) plus the new user message.
+    ///
+    /// Returns `EngineError::NoChatTemplate` if the manifest has no
+    /// `chat_template`, or `EngineError::NoUserMessage` if `messages`
+    /// has no user turn.
+    #[cfg(feature = "genie")]
+    pub fn generate_chat_streaming<F>(
+        &self,
+        messages: &[ChatMessage],
+        mut callback: F,
+    ) -> Result<(), EngineError>
+    where
+        F: FnMut(&str),
+    {
+        let template = self.manifest.chat_template.as_ref().ok_or_else(|| {
+            EngineError::NoChatTemplate {
+                name: self.manifest.name.clone(),
+            }
+        })?;
+        let transcript = template
+            .wrap_chat(messages)
+            .ok_or(EngineError::NoUserMessage)?;
+        // Sentence-code selection for multi-turn:
+        //
+        // - First call on a freshly loaded dialog: `Complete`. This is
+        //   a self-contained, single-shot query; Genie processes the
+        //   whole transcript and leaves the resulting KV cache state
+        //   resident on the dialog.
+        // - Subsequent calls: `Rewind`. Genie matches the new
+        //   transcript prefix against the cached state, rewinds the
+        //   KV cache to the divergence point, and re-prefills only
+        //   the new tokens — the multi-turn fast path.
+        //
+        // (`Begin`/`Continue`/`End` are for chunked *input* — feeding
+        // one long prompt to Genie in pieces. Not what we want here.)
+        //
+        // Compare-and-swap so concurrent first calls — if they ever
+        // slipped past the server's semaphore — would still pick
+        // exactly one `Complete`.
+        let code = if self
+            .chat_started
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_ok()
+        {
+            qnn::SentenceCode::Complete
+        } else {
+            qnn::SentenceCode::Rewind
+        };
+        self.dialog
+            .query_streaming_with(&transcript, code, |chunk, _code| {
+                callback(chunk);
+            })?;
+        Ok(())
+    }
+
+    /// Reset the dialog's chat state. Drops the KV cache and forces the
+    /// next [`Self::generate_chat_streaming`] call to use
+    /// `SentenceCode::Begin`. Useful when a client signals a fresh
+    /// conversation and you want guaranteed-clean state instead of
+    /// relying on Genie's prefix-mismatch handling.
+    #[cfg(feature = "genie")]
+    pub fn reset_chat(&self) -> Result<(), EngineError> {
+        self.dialog.reset()?;
+        self.chat_started.store(false, Ordering::Release);
+        Ok(())
+    }
+
+    /// Blocking variant of [`Self::generate_chat_streaming`].
+    #[cfg(feature = "genie")]
+    pub fn generate_chat(&self, messages: &[ChatMessage]) -> Result<String, EngineError> {
+        let mut buf = String::new();
+        self.generate_chat_streaming(messages, |chunk| buf.push_str(chunk))?;
+        Ok(buf)
+    }
+
     /// Stub implementation when the `genie` feature is off.
     #[cfg(not(feature = "genie"))]
     pub fn generate(&self, _prompt: &str) -> Result<String, EngineError> {
@@ -183,6 +289,25 @@ impl Engine {
     /// Stub implementation when the `genie` feature is off.
     #[cfg(not(feature = "genie"))]
     pub fn generate_streaming<F>(&self, _prompt: &str, _callback: F) -> Result<(), EngineError>
+    where
+        F: FnMut(&str),
+    {
+        Err(EngineError::FeatureDisabled(self.config.backend))
+    }
+
+    /// Stub implementation when the `genie` feature is off.
+    #[cfg(not(feature = "genie"))]
+    pub fn generate_chat(&self, _messages: &[ChatMessage]) -> Result<String, EngineError> {
+        Err(EngineError::FeatureDisabled(self.config.backend))
+    }
+
+    /// Stub implementation when the `genie` feature is off.
+    #[cfg(not(feature = "genie"))]
+    pub fn generate_chat_streaming<F>(
+        &self,
+        _messages: &[ChatMessage],
+        _callback: F,
+    ) -> Result<(), EngineError>
     where
         F: FnMut(&str),
     {

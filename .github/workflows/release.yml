@@ -1,0 +1,86 @@
+name: release
+
+# Tag-triggered release pipeline. Tags a `v*` ref ⇒ builds the
+# release zip + MSIX on a self-hosted ARM64 runner that has the QNN
+# SDK installed (which CI cloud runners cannot have — QAIRT is
+# non-redistributable), signs the MSIX if a cert is configured, and
+# uploads to a GitHub release.
+#
+# Currently disabled at the job level (if: false) until a self-hosted
+# ARM64 runner is enrolled with QNN_SDK_ROOT set. Today the release
+# flow is manual:
+#
+#   pwsh -File scripts\package-release.ps1 -Version <v>
+#   pwsh -File scripts\build-msix.ps1 -Version <v>
+#   gh release create v<v> dist\*.zip dist\*.msix dist\*.sha256 ...
+#
+# Once a self-hosted runner is online, flip the `if: false` to
+# `if: true` (or remove the line) and the same flow runs on tag push.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Override version string (defaults to tag name)"
+        required: false
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: build + sign + release (self-hosted ARM64)
+    runs-on: [self-hosted, Windows, ARM64]
+    if: false # enable once self-hosted runner is enrolled and QNN SDK is in place
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-pc-windows-msvc
+
+      - name: derive version
+        id: ver
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $override = "${{ github.event.inputs.version }}"
+          $v = if ($override) { $override } else { $tag -replace '^v','' }
+          "version=$v" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          Write-Host "release version: $v"
+
+      - name: build release zip
+        env:
+          QNN_SDK_ROOT: ${{ secrets.QNN_SDK_ROOT }}
+        run: pwsh -File scripts\package-release.ps1 -Version ${{ steps.ver.outputs.version }}
+
+      - name: build MSIX (signed if cert configured)
+        env:
+          QNN_SDK_ROOT: ${{ secrets.QNN_SDK_ROOT }}
+        shell: pwsh
+        run: |
+          $cert = "${{ secrets.MSIX_CERT_THUMBPRINT }}"
+          if ($cert) {
+            pwsh -File scripts\build-msix.ps1 -Version ${{ steps.ver.outputs.version }} -CertThumbprint $cert
+          } else {
+            Write-Host "no MSIX_CERT_THUMBPRINT secret set; building unsigned MSIX" -ForegroundColor Yellow
+            pwsh -File scripts\build-msix.ps1 -Version ${{ steps.ver.outputs.version }}
+          }
+
+      - name: create release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: pwsh
+        run: |
+          $v = "${{ steps.ver.outputs.version }}"
+          $assets = @(
+            "dist\hexrun-$v-aarch64-windows.zip",
+            "dist\hexrun-$v-aarch64-windows.zip.sha256",
+            "dist\hexrun-$v-aarch64-windows.msix",
+            "dist\hexrun-$v-aarch64-windows.msix.sha256"
+          ) | Where-Object { Test-Path $_ }
+          $isPre = if ($v -match '-(rc|alpha|beta)') { "--prerelease" } else { "" }
+          $title = "v$v"
+          gh release create "v$v" $assets --title $title --generate-notes $isPre

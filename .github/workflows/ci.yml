@@ -51,6 +51,45 @@ jobs:
         working-directory: python/hex-convert
         run: ruff check .
 
+  python-test:
+    name: hex-convert tests
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: install hex-convert + test deps
+        working-directory: python/hex-convert
+        run: pip install -e ".[test]"
+      - name: pytest
+        working-directory: python/hex-convert
+        run: pytest -v
+
+  winget-validate:
+    name: winget manifest validate
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: validate every published manifest dir
+        shell: pwsh
+        run: |
+          $manifestRoot = "manifests/b/bpbonker/hexrun"
+          if (-not (Test-Path $manifestRoot)) {
+            Write-Host "no winget manifests yet, skipping" -ForegroundColor Yellow
+            exit 0
+          }
+          $failed = 0
+          Get-ChildItem -Path $manifestRoot -Directory | ForEach-Object {
+            Write-Host "validating $($_.FullName)" -ForegroundColor Cyan
+            & winget validate --manifest $_.FullName
+            if ($LASTEXITCODE -ne 0) { $failed++ }
+          }
+          if ($failed -gt 0) {
+            Write-Error "$failed manifest version(s) failed validation"
+            exit 1
+          }
+
   # Self-hosted ARM64 runner with the QNN SDK pre-installed runs the full
   # build + NPU integration tests. Wire up once the dev laptop is enrolled
   # as a self-hosted runner.

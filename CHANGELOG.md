@@ -209,6 +209,43 @@ All notable changes to hexrun will be documented here. Format follows
   `genie_config.json`, missing `tokenizer.json`, and unknown arch
   without an override.
 
+### Added — Phase 6 starter (release ergonomics)
+
+- **winget manifest** at `manifests/b/bpbonker/hexrun/0.1.0-rc.1/`,
+  three YAML files (version, en-US locale, installer) following the
+  v1.6.0 schema. Installer type is `zip` with a portable nested
+  `hexrun.exe` and a `Commands: [hexrun]` alias, so winget can install
+  the existing GitHub-release zip with no code signing required —
+  validated by `winget validate`. End-users can already
+  `winget install --manifest manifests\b\bpbonker\hexrun\0.1.0-rc.1`
+  off a clone of the repo. Public-catalog submission to
+  `microsoft/winget-pkgs` is gated on a signed installer (Phase 6
+  final).
+- **Tag-triggered release workflow** at
+  `.github/workflows/release.yml`. Runs on `v*` tag push and
+  `workflow_dispatch`, gated `if: false` until a self-hosted ARM64
+  runner with QAIRT is enrolled. Builds zip + MSIX, signs the MSIX
+  if `MSIX_CERT_THUMBPRINT` secret is configured, opens a GitHub
+  release with all four artifacts (auto-detects `-rc/-alpha/-beta`
+  suffix and marks pre-release).
+- **CI matrix expanded:** `python-test` (pytest on `hex-convert`)
+  and `winget-validate` (validates every published manifest dir on
+  push) jobs added to `ci.yml` alongside the existing fmt/clippy/
+  build/test/python-lint set.
+- **`scripts/dev-cert.ps1`** for development MSIX signing.
+  Generates a self-signed code-signing cert in
+  `CurrentUser\My`, attempts to import it into
+  `LocalMachine\TrustedPeople` (admin needed) so a signed dev MSIX
+  installs by double-click without developer mode. `-List` shows
+  existing dev certs; `-Remove <thumb>` deletes one. Pairs with
+  `scripts/build-msix.ps1 -CertThumbprint <thumb>`.
+- **`docs/release.md`** — copy-paste runbook for cutting a release:
+  pre-flight, version bump, build artifacts, smoke-test, tag + push,
+  GitHub release, winget manifest update, code-signing options
+  (dev self-signed, Azure Trusted Signing, DigiCert/Sectigo, EV cert),
+  and CI matrix overview. The literal flow rather than the
+  aspirational one.
+
 ### Pending for v0.1.0
 - README walkthrough screenshot/recording.
 - `hex-convert` Python pipeline for HF → bundle conversion (Phase 5).

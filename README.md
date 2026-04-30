@@ -175,6 +175,7 @@ with HTTP 429 + `Retry-After: 1` rather than queued indefinitely.
 - [`docs/architecture.md`](docs/architecture.md) — design decisions
 - [`docs/troubleshooting.md`](docs/troubleshooting.md) — every error we've hit and the fix
 - [`docs/compatibility.md`](docs/compatibility.md) — model compatibility matrix
+- [`docs/release.md`](docs/release.md) — copy-paste release runbook (build, tag, sign, winget)
 - [`docs/roadmap.md`](docs/roadmap.md) — what's left for v0.1.0
 
 ## Status / roadmap (April 2026)
@@ -200,8 +201,13 @@ with HTTP 429 + `Retry-After: 1` rather than queued indefinitely.
 - [x] Phase 5 (starter): `hex-convert manifest` + `hex-convert inspect`
   for local Genie bundles; `hex-convert export` shells out to
   `qai-hub-models`. Curated recipe set; remote registry still open.
-- [ ] Phase 6: signed Windows MSIX installer, winget manifest, CI matrix,
-  docs site
+- [x] Phase 6 (starter): winget manifest (zip installer, validated),
+  tag-triggered release workflow, expanded CI matrix
+  (pytest + winget-validate), dev-cert helper for signed-MSIX
+  testing, full release runbook in [`docs/release.md`](docs/release.md).
+- [ ] Phase 6 final: signed MSIX with a real CA / Azure Trusted
+  Signing cert, public winget catalog submission, self-hosted ARM64
+  CI runner enrolled.
 
 See [`docs/roadmap.md`](docs/roadmap.md) for the detailed wave plan.
 

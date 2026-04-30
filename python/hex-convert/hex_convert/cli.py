@@ -119,7 +119,10 @@ def inspect_cmd(target: Path, no_verify: bool) -> None:
 @click.option(
     "--skip-compile",
     is_flag=True,
-    help="Don't shell out to qai-hub-models; assume the bundle is already under --output and just emit the manifest.",
+    help=(
+        "Don't shell out to qai-hub-models; assume the bundle is already under "
+        "--output and just emit the manifest."
+    ),
 )
 def export_cmd(
     slug: str, output: Path, quant: str | None, qnn_sdk: str, skip_compile: bool

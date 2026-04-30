@@ -73,11 +73,24 @@ Goal: turn 2+ of a multi-turn conversation is fast.
 | 5.3 | `hex-convert export` orchestrates a fresh AI Hub compile | done (orchestrator) | Curated recipes for `phi-3.5-mini`, `llama-v3-1-8b-instruct`, `qwen-2-5-7b`. Shells out to `qai-hub-models`'s per-model export script and chains into `manifest`. End-user runs it, takes 30-90 minutes per model. Not exercised in CI. |
 | 5.4 | Remote registry beyond the hardcoded list | open | The `hexrun pull` registry is still hardcoded. Future work: a JSON index hosted somewhere, signed by the publisher, fetched at pull time. |
 
+## Phase 6 — release ergonomics (starter shipped 2026-05-01)
+
+| # | Item | Effort | Notes |
+|---|---|---:|---|
+| 6.1 | winget manifest | done | `manifests/b/bpbonker/hexrun/0.1.0-rc.1/` with version + locale + installer YAMLs (zip-installer type, portable nested binary, `Commands: [hexrun]`). Validated by `winget validate`. Installs today via `winget install --manifest <dir>` against a clone. |
+| 6.2 | Tag-triggered release workflow | scaffolded | `.github/workflows/release.yml` builds zip + MSIX, signs MSIX if `MSIX_CERT_THUMBPRINT` secret set, opens release with all four artifacts. `if: false` until self-hosted ARM64 runner is enrolled. |
+| 6.3 | CI matrix expansion | done | `python-test` (pytest on `hex-convert`) and `winget-validate` jobs added alongside the existing fmt/clippy/build/test/python-lint set. |
+| 6.4 | Dev MSIX signing | done | `scripts/dev-cert.ps1` generates a self-signed code-signing cert in `CurrentUser\My`, imports into `LocalMachine\TrustedPeople` (admin), pairs with `scripts/build-msix.ps1 -CertThumbprint`. |
+| 6.5 | Release runbook | done | `docs/release.md` is the copy-paste flow: pre-flight, version bump, build, smoke-test, tag + push, GitHub release, winget update, code-signing options. |
+| 6.6 | Production code signing | open | Need a real cert — Azure Trusted Signing ($10/mo), DigiCert/Sectigo standard ($200-400/yr), or EV cert. Once provisioned, expose thumbprint to CI as a secret. |
+| 6.7 | Public winget catalog submission | gated on 6.6 | PR to `microsoft/winget-pkgs`. Reviewers prefer signed installers. |
+| 6.8 | Self-hosted ARM64 CI runner | open | Enrol the dev laptop (or a dedicated X1E box) as a self-hosted runner with `QNN_SDK_ROOT` set as a secret; flip `release.yml` and `build-arm64-with-qnn` from `if: false`. |
+| 6.9 | Docs site | open | github.io. mkdocs / mdBook / similar. Wire up a `gh-pages.yml` workflow to publish on push to `main`. |
+
 ## Beyond v0.1.0 — explicitly deferred
 
-- **Phase 6: release prep**. Signed Windows MSIX installer, winget manifest, signed CI matrix on a self-hosted ARM64 runner, docs site (github.io). Multi-day.
 - **Snapdragon X2 support** when hardware ships.
-- **Remote registry** (Phase 5.4 above) — the `hexrun pull` index is still hardcoded; a signed JSON index hosted somewhere is the next step toward unbundling that.
+- **Remote registry** (Phase 5.4) — the `hexrun pull` index is still hardcoded; a signed JSON index hosted somewhere is the next step toward unbundling that.
 
 ## Execution plan for tonight
 

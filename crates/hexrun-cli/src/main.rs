@@ -54,9 +54,21 @@ enum Cmd {
         #[arg(long)]
         model: Option<String>,
         /// Bind address. Default 127.0.0.1:11435 so hexrun and Ollama can
-        /// run side-by-side (Ollama defaults to 11434).
+        /// run side-by-side (Ollama defaults to 11434). Use `0.0.0.0:11435`
+        /// to expose on the LAN; you'll be warned and you should pair
+        /// that with --auth-token.
         #[arg(long, default_value = "127.0.0.1:11435")]
         bind: SocketAddr,
+        /// Require `Authorization: Bearer <token>` on /v1/* and /api/*.
+        /// Strongly recommended whenever --bind is non-loopback.
+        #[arg(long, value_name = "TOKEN")]
+        auth_token: Option<String>,
+        /// Skip the post-load warmup query. Without this, the server
+        /// runs a tiny generation before accepting requests so the first
+        /// real client doesn't pay the cold-start cost on top of the
+        /// 9–30 second bundle load.
+        #[arg(long)]
+        no_warmup: bool,
     },
 }
 
@@ -90,7 +102,12 @@ async fn main() -> Result<()> {
         Cmd::Ps => {
             println!("ps: (Phase 4 — not yet implemented)");
         }
-        Cmd::Serve { model, bind } => {
+        Cmd::Serve {
+            model,
+            bind,
+            auth_token,
+            no_warmup,
+        } => {
             let state = match model.as_deref() {
                 Some(name) => {
                     let dir = resolve_model_dir(name)?;
@@ -108,11 +125,24 @@ async fn main() -> Result<()> {
                         engine.manifest().context,
                         load_started.elapsed()
                     );
+                    if !no_warmup {
+                        let warmup_started = Instant::now();
+                        match engine.generate("Hi.") {
+                            Ok(_) => {
+                                eprintln!("[warmup query in {:.2?}]", warmup_started.elapsed());
+                            }
+                            Err(e) => {
+                                eprintln!("[warmup failed: {e}; continuing]");
+                            }
+                        }
+                    }
                     let model_name = engine.manifest().name.clone();
                     let arc_engine = std::sync::Arc::new(std::sync::Mutex::new(engine));
                     hexrun_server::ServerState {
                         engine: Some(arc_engine),
                         model_name: Some(model_name),
+                        started_at: Some(std::time::SystemTime::now()),
+                        auth_token: auth_token.clone(),
                     }
                 }
                 None => {
@@ -120,9 +150,24 @@ async fn main() -> Result<()> {
                         "warning: starting hexrun serve without --model. Endpoints will return 503 \
                          until a model is loaded."
                     );
-                    hexrun_server::ServerState::default()
+                    hexrun_server::ServerState {
+                        started_at: Some(std::time::SystemTime::now()),
+                        auth_token: auth_token.clone(),
+                        ..Default::default()
+                    }
                 }
             };
+
+            if !bind.ip().is_loopback() {
+                eprintln!(
+                    "\n  ⚠  exposing hexrun on {bind} — anyone who can reach this address can use this server.\n     {}\n",
+                    if auth_token.is_some() {
+                        "auth token enabled (clients must send `Authorization: Bearer <token>`)"
+                    } else {
+                        "no --auth-token set; consider passing one when binding to a non-loopback address"
+                    }
+                );
+            }
             eprintln!(
                 "hexrun serve listening on http://{}\n  - OpenAI-compatible: POST /v1/chat/completions, GET /v1/models\n  - Ollama-compatible: POST /api/generate, POST /api/chat, GET /api/tags\n  - GET /healthz",
                 bind

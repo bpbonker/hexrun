@@ -19,3 +19,4 @@
 - [Findings](findings.md)
 - [Paper](paper.md)
 - [Repo hygiene](repo_hygiene.md)
+- [Specula follow-ups](specula_followups.md)

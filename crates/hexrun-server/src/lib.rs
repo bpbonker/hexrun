@@ -16,7 +16,7 @@ use axum::Router;
 use hexrun_core::Engine;
 
 /// Shared state for the HTTP handlers.
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct ServerState {
     /// The loaded inference engine, wrapped in a Mutex so concurrent
     /// requests serialize their queries. None when the server starts
@@ -25,15 +25,6 @@ pub struct ServerState {
     pub engine: Option<Arc<Mutex<Engine>>>,
     /// Model name reported in `/v1/models` and `/api/tags`.
     pub model_name: Option<String>,
-}
-
-impl Default for ServerState {
-    fn default() -> Self {
-        Self {
-            engine: None,
-            model_name: None,
-        }
-    }
 }
 
 /// Build the axum router with all hexrun endpoints.

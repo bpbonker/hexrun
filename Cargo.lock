@@ -1330,9 +1330,11 @@ dependencies = [
 name = "qnn"
 version = "0.1.0-dev"
 dependencies = [
+ "anyhow",
  "qnn-sys",
  "thiserror",
  "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

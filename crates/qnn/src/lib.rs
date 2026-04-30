@@ -1,34 +1,22 @@
-//! Safe, ergonomic wrappers around the Qualcomm AI Engine Direct (QNN) runtime.
+//! Safe, ergonomic wrappers around the Qualcomm AI Engine Direct (QNN) and
+//! Genie LLM runtime C APIs.
 //!
-//! Phase 1 surface (planned): `Backend`, `Context`, `Graph`, `Tensor`, plus a
-//! `Capabilities` snapshot used by hexrun to refuse loading context binaries
-//! whose embedded SDK version mismatches by minor — directly addressing the
-//! version-pinning trap that hit Nexa SDK #1060.
+//! Two layers:
+//! - The **Genie** module ([`genie`]) wraps `libGenie` (the higher-level LLM
+//!   runtime). This is the path used for inference of pre-built Snapdragon
+//!   X Elite NPU bundles like the Qwen 2.5 7B context binaries produced by
+//!   Qualcomm AI Hub. Genie ships an import library, so the bindings are
+//!   statically linked.
+//! - The **QNN core** wrappers (planned, future work) will wrap raw QNN
+//!   contexts/graphs/tensors for non-LLM workloads. QAIRT does not ship a
+//!   `QnnSystem.lib` import library on Windows ARM64, so that path will use
+//!   `libloading` for dynamic dispatch.
 //!
-//! All public types are RAII; drop runs the matching `Qnn*_free` call.
+//! All public types are RAII; their `Drop` impls call the matching
+//! `*_free` C function.
 
-use thiserror::Error;
+#![warn(missing_docs, clippy::all)]
 
-#[derive(Debug, Error)]
-pub enum QnnError {
-    #[error("QNN SDK not present at build time (QNN_SDK_ROOT was unset)")]
-    SdkMissing,
-    #[error("QNN runtime returned status {0}")]
-    Status(i32),
-    #[error("invalid argument: {0}")]
-    InvalidArgument(String),
-}
+pub mod genie;
 
-/// Snapshot of the runtime environment used for version compatibility checks.
-#[derive(Debug, Clone)]
-pub struct Capabilities {
-    pub sdk_version: String,
-    pub htp_driver_version: Option<String>,
-}
-
-impl Capabilities {
-    /// Probe the loaded QNN runtime for its version. Phase 1 stub.
-    pub fn probe() -> Result<Self, QnnError> {
-        Err(QnnError::SdkMissing)
-    }
-}
+pub use genie::{api_version, ApiVersion, Dialog, GenieError, SentenceCode};

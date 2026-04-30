@@ -34,11 +34,19 @@ fn main() {
 }
 
 fn generate_real_bindings(sdk_root: &Path, out_dir: &Path) {
-    let include_dir = sdk_root.join("include").join("QNN");
-    if !include_dir.exists() {
+    let qnn_include = sdk_root.join("include").join("QNN");
+    let genie_include = sdk_root.join("include").join("Genie");
+    if !qnn_include.exists() {
         panic!(
             "QNN_SDK_ROOT={} does not contain include/QNN. \
              Verify the SDK install layout.",
+            sdk_root.display()
+        );
+    }
+    if !genie_include.exists() {
+        panic!(
+            "QNN_SDK_ROOT={} does not contain include/Genie. \
+             Verify the SDK install layout (need QAIRT 2.44+ for Genie).",
             sdk_root.display()
         );
     }
@@ -47,34 +55,50 @@ fn generate_real_bindings(sdk_root: &Path, out_dir: &Path) {
     std::fs::write(
         &header,
         r#"// Auto-generated umbrella header for bindgen.
-#include "QnnCommon.h"
-#include "QnnTypes.h"
-#include "QnnInterface.h"
-#include "QnnBackend.h"
-#include "QnnContext.h"
-#include "QnnGraph.h"
-#include "QnnTensor.h"
-#include "QnnDevice.h"
-#include "QnnLog.h"
-#include "QnnProfile.h"
-#include "QnnMem.h"
-#include "QnnProperty.h"
-#include "System/QnnSystemContext.h"
+
+// QNN core
+#include "QNN/QnnCommon.h"
+#include "QNN/QnnTypes.h"
+#include "QNN/QnnInterface.h"
+#include "QNN/QnnBackend.h"
+#include "QNN/QnnContext.h"
+#include "QNN/QnnGraph.h"
+#include "QNN/QnnTensor.h"
+#include "QNN/QnnDevice.h"
+#include "QNN/QnnLog.h"
+#include "QNN/QnnProfile.h"
+#include "QNN/QnnMem.h"
+#include "QNN/QnnProperty.h"
+#include "QNN/System/QnnSystemContext.h"
+
+// Genie LLM runtime (higher-level wrapper over QNN HTP)
+#include "Genie/GenieCommon.h"
+#include "Genie/GenieDialog.h"
 "#,
     )
     .expect("write wrapper.h");
 
     let bindings = bindgen::Builder::default()
         .header(header.to_string_lossy())
-        .clang_arg(format!("-I{}", include_dir.display()))
+        // Both `-I include` (so umbrella header's "QNN/Foo.h" resolves) and
+        // `-I include/QNN` (so internal cross-includes like "QnnDevice.h"
+        // without the prefix resolve too).
+        .clang_arg(format!("-I{}", sdk_root.join("include").display()))
+        .clang_arg(format!("-I{}", qnn_include.display()))
+        .clang_arg(format!("-I{}", genie_include.display()))
         .allowlist_function("Qnn.*")
+        .allowlist_function("Genie.*")
+        .allowlist_function("Genie_.*")
         .allowlist_type("Qnn.*")
+        .allowlist_type("Genie.*")
+        .allowlist_type("Genie_.*")
         .allowlist_var("QNN_.*")
+        .allowlist_var("GENIE_.*")
         .derive_default(true)
         .derive_debug(true)
         .layout_tests(false)
         .generate()
-        .expect("generate QNN bindings");
+        .expect("generate QNN + Genie bindings");
 
     let out = out_dir.join("bindings.rs");
     bindings.write_to_file(&out).expect("write bindings.rs");
@@ -82,13 +106,17 @@ fn generate_real_bindings(sdk_root: &Path, out_dir: &Path) {
 
 fn link_qnn(sdk_root: &Path) {
     // QAIRT does not ship a QnnSystem.lib import library on Windows ARM64
-    // (only QnnSystem.dll). We rely on runtime dynamic loading via the
-    // `libloading` crate (Phase 1) rather than a static link, so this build
-    // script only emits a search-path hint and a re-run trigger.
+    // (only QnnSystem.dll). The QNN core is loaded via runtime dynamic
+    // dispatch (libloading), not a static link.
+    //
+    // Genie.lib *does* ship, so the Genie LLM runtime is statically linked
+    // here -- no runtime loading dance required for the LLM path.
     let arch_dir = sdk_root.join("lib").join("aarch64-windows-msvc");
     if arch_dir.exists() {
         println!("cargo:rustc-link-search=native={}", arch_dir.display());
         println!("cargo:rerun-if-changed={}", arch_dir.display());
+        // Link Genie statically (Genie.lib + Genie.dll at runtime).
+        println!("cargo:rustc-link-lib=dylib=Genie");
     } else {
         println!(
             "cargo:warning=Expected QNN lib dir not found: {}. \

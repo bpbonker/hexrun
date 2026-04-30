@@ -11,4 +11,11 @@ if errorlevel 1 (
     echo [dev-shell] vcvarsall.bat failed with errorlevel %errorlevel%
     exit /b %errorlevel%
 )
+REM If QAIRT is configured, prepend its bin/lib dirs so any exe launched here
+REM (cargo-run examples, hexrun, integration tests) can locate Genie.dll,
+REM QnnHtp.dll, and the Hexagon stub libraries at process startup.
+if defined QNN_SDK_ROOT (
+    set "PATH=%QNN_SDK_ROOT%\bin\aarch64-windows-msvc;%QNN_SDK_ROOT%\lib\aarch64-windows-msvc;%PATH%"
+    if not defined ADSP_LIBRARY_PATH set "ADSP_LIBRARY_PATH=%QNN_SDK_ROOT%\lib\hexagon-v73\unsigned"
+)
 %*

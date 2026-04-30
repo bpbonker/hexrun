@@ -1,6 +1,6 @@
 [package]
 name = "qnn"
-description = "Safe ergonomic Rust bindings for the Qualcomm AI Engine Direct (QNN) runtime"
+description = "Safe ergonomic Rust bindings for Qualcomm AI Engine Direct (QNN) and Genie LLM runtime"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -12,3 +12,11 @@ authors.workspace = true
 qnn-sys = { path = "../qnn-sys" }
 thiserror = { workspace = true }
 tracing = { workspace = true }
+
+[dev-dependencies]
+anyhow = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+[[example]]
+name = "qwen-genie"
+path = "examples/qwen-genie.rs"

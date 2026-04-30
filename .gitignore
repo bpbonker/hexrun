@@ -46,5 +46,11 @@ qnn_profile_*.csv
 .serve-stdout.log
 .serve-stderr.log
 
+# Release artifacts (built by scripts/package-release.ps1, scripts/build-msix.ps1)
+/dist/
+
+# Generated MSIX icon placeholders (regenerated on each build)
+/installer/Assets/
+
 # Generated bindgen output (kept in OUT_DIR by default)
 /bindings.rs

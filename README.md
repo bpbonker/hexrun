@@ -57,13 +57,13 @@ full operational state.
 
 | Tool | NPU support on Snapdragon X Elite (Apr 2026) |
 |---|---|
-| Ollama | ❌ CPU only ([#5360](https://github.com/ollama/ollama/issues/5360)) |
-| llama.cpp | ❌ QNN backend stalled ([#8273](https://github.com/ggml-org/llama.cpp/discussions/8273)) |
-| LM Studio | ❌ CPU/GPU only ([#30](https://github.com/lmstudio-ai/lms/issues/30)) |
-| text-generation-webui | ❌ ([#6298](https://github.com/oobabooga/text-generation-webui/issues/6298)) |
-| Microsoft Phi Silica | ✅ NPU, but locked to first-party Copilot apps |
-| NexaSDK | ✅ NPU, but closed CLI |
-| **hexrun** | ✅ NPU, open Rust, embeddable |
+| Ollama | CPU only ([#5360](https://github.com/ollama/ollama/issues/5360)) |
+| llama.cpp | QNN backend stalled ([#8273](https://github.com/ggml-org/llama.cpp/discussions/8273)) |
+| LM Studio | CPU/GPU only ([#30](https://github.com/lmstudio-ai/lms/issues/30)) |
+| text-generation-webui | none ([#6298](https://github.com/oobabooga/text-generation-webui/issues/6298)) |
+| Microsoft Phi Silica | NPU, but locked to first-party Copilot apps |
+| NexaSDK | NPU, but closed CLI |
+| **hexrun** | NPU, open Rust, embeddable |
 
 ## Performance, honestly
 
@@ -106,7 +106,7 @@ hosted on Qualcomm's HuggingFace org:
 
 | Name | Size | Verified |
 |---|---:|---|
-| `phi-3.5-mini` | ~2.1 GB | ✅ chat-usable, 11.7 tok/s |
+| `phi-3.5-mini` | ~2.1 GB | chat-usable, 11.7 tok/s |
 | `llama-v3-1-8b-instruct` | ~4.5 GB | URL correct; not yet bench'd |
 | `qwen-2-5-7b` | ~4.3 GB | URL correct; w4a16 variant |
 
@@ -175,22 +175,37 @@ with HTTP 429 + `Retry-After: 1` rather than queued indefinitely.
 
 ## Status / roadmap (April 2026)
 
-- ✅ Phase 0 — NPU verified end-to-end with Qwen 2.5 7B on hardware
-- ✅ Phase 1 — Native Rust bindings to libGenie / QNN
-- ✅ Phase 2 — `hexrun list/show/run` CLI
-- ✅ Phase 3 — `hexrun pull/rm` with built-in registry
-- ✅ Phase 4 — HTTP server (OpenAI + Ollama compat, SSE/NDJSON streaming)
-- ✅ Server LAN safety: CORS, `--auth-token`, warmup, rich `/healthz`,
+**Shipped:**
+
+- [x] Phase 0 — NPU verified end-to-end with Qwen 2.5 7B on hardware
+- [x] Phase 1 — Native Rust bindings to libGenie / QNN
+- [x] Phase 2 — `hexrun list/show/run` CLI
+- [x] Phase 3 — `hexrun pull/rm` with built-in registry
+- [x] Phase 4 — HTTP server (OpenAI + Ollama compat, SSE/NDJSON streaming)
+- [x] Server LAN safety: CORS, `--auth-token`, warmup, rich `/healthz`,
   HTTP 429 backpressure, graceful shutdown
-- ✅ Pull integrity: sha256 verification + resumable downloads
-- ⏳ Energy / power measurement (quantify the NPU efficiency claim)
-- ⏳ Multi-turn KV-cache rewind (real chat performance on turn 2+)
-- ⏳ Phase 5: `hex-convert` Python pipeline (HF → ONNX → AI Hub →
+- [x] Pull integrity: sha256 verification + resumable downloads
+- [x] Ollama parity: `:latest` aliases, `/api/version`, `/api/show`,
+  `/api/delete`, `hexrun ps` against a running server
+- [x] Energy measurement: ~1.27 J/token at ~6.9 W delta on Phi 3.5 Mini
+
+**In progress:**
+
+- [ ] Multi-turn KV-cache rewind (real chat performance on turn 2+)
+- [ ] Phase 5: `hex-convert` Python pipeline (HF → ONNX → AI Hub →
   bundle); remote registry beyond the hardcoded list
-- ⏳ Phase 6: signed Windows MSIX installer, winget manifest, CI matrix,
+- [ ] Phase 6: signed Windows MSIX installer, winget manifest, CI matrix,
   docs site
 
 See [`docs/roadmap.md`](docs/roadmap.md) for the detailed wave plan.
+
+## Support the work
+
+hexrun is independently maintained. If it saved you time, or you want
+to see the roadmap items above land sooner, you can [☕ buy me a coffee](https://buymeacoffee.com/bpbprofessional).
+
+Tips fund the unglamorous parts — toolchain debugging, NPU SDK spelunking,
+the third rewrite of an FFI binding nobody else has written.
 
 ## License
 

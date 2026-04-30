@@ -1,8 +1,6 @@
 # Architecture
 
-This document captures the load-bearing decisions behind npurun. It tracks
-the [plan](../../../Users/Brenden/.claude/plans/there-currently-exists-no-parallel-sparrow.md)
-but lives here so contributors can find it.
+This document captures the load-bearing decisions behind npurun.
 
 ## Two backends, one engine
 

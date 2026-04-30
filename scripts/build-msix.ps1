@@ -102,8 +102,8 @@ if (-not (Test-Path $assetsDir)) {
     New-Item -ItemType Directory -Path $assetsDir | Out-Null
 }
 $assetSpecs = @(
-    @{ Name = "StoreLogo.png";          W = 50;  H = 50;  Letter = "h" },
-    @{ Name = "Square44x44Logo.png";    W = 44;  H = 44;  Letter = "h" },
+    @{ Name = "StoreLogo.png";          W = 50;  H = 50;  Letter = "n" },
+    @{ Name = "Square44x44Logo.png";    W = 44;  H = 44;  Letter = "n" },
     @{ Name = "Square150x150Logo.png";  W = 150; H = 150; Letter = "npurun" },
     @{ Name = "Wide310x150Logo.png";    W = 310; H = 150; Letter = "npurun" }
 )
@@ -142,9 +142,13 @@ New-Item -ItemType Directory -Path (Join-Path $staging "Assets") -Force | Out-Nu
 # Use UTF-8 *without* BOM — makeappx rejects a BOM ahead of the
 # `<?xml ... ?>` declaration with "Incorrect xml declaration syntax".
 $manifest = Get-Content "installer\AppxManifest.xml" -Raw
-# Use case-sensitive replace so we don't clobber the lowercase
-# `version="1.0"` in the `<?xml ... ?>` declaration.
-$manifest = $manifest -creplace 'Version="[\d.]+"', "Version=`"$msixVersion`""
+# Replace ONLY the <Identity> element's Version attribute. A naive
+# `Version="[\d.]+"` over-matches MinVersion / MaxVersionTested on
+# the <TargetDeviceFamily> element and would clobber the OS version
+# floor. Use a lookbehind anchored on `<Identity ... ` so we only
+# touch the package version. Case-sensitive so we don't clash with
+# the lowercase `version="1.0"` in the `<?xml ... ?>` declaration.
+$manifest = $manifest -creplace '(?s)(<Identity\b[^>]*?\sVersion=")[\d.]+(")', "`${1}$msixVersion`${2}"
 $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 [System.IO.File]::WriteAllText((Join-Path (Resolve-Path $staging) "AppxManifest.xml"), $manifest, $utf8NoBom)
 

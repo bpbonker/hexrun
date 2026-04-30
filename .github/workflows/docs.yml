@@ -1,0 +1,68 @@
+name: docs
+
+# Build the mdBook docs site (book.toml -> docs/) and publish to
+# GitHub Pages. Runs on every push to main; PRs get build-only
+# verification so a broken SUMMARY.md fails the PR before merge.
+#
+# One-time enablement (per repo): Settings -> Pages -> Source: GitHub
+# Actions. After the first successful run on main the site is live at
+# https://bpbonker.github.io/npurun/.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/**"
+      - "book.toml"
+      - ".github/workflows/docs.yml"
+  pull_request:
+    paths:
+      - "docs/**"
+      - "book.toml"
+      - ".github/workflows/docs.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Allow only one concurrent Pages deploy. Cancel in-progress runs but
+# let an already-running deploy finish so we don't leave Pages in a
+# half-published state.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: build mdBook
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: install mdBook
+        uses: peaceiris/actions-mdbook@v2
+        with:
+          mdbook-version: "0.4.40"
+
+      - name: mdbook build
+        run: mdbook build
+
+      - name: upload artifact
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./book
+
+  deploy:
+    name: deploy to GitHub Pages
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

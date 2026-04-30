@@ -6,17 +6,15 @@
 This document is the single source of truth for "where are we, what works,
 what's next" if you're picking up the project mid-stream. Pair it with:
 
-- `~/.claude/plans/there-currently-exists-no-parallel-sparrow.md` — the plan
-- `~/.claude/projects/c--AAA-Personal-AI/memory/MEMORY.md` — auto-memory index
-- `README.md` — user-facing intro and quickstart
-- `docs/roadmap.md` — wave-by-wave plan to v0.1.0
-- `docs/architecture.md` — architectural decisions
-- `docs/troubleshooting.md` — every failure mode we've hit and how to fix
-- `docs/benchmarks.md` — measured numbers
-- `docs/findings.md` — engineering writeup
-- `docs/paper.md` — formal experience-report
-- `docs/compatibility.md` — model compatibility matrix scaffold
-- `CHANGELOG.md` — chronological log of changes
+- [`README.md`](https://github.com/bpbonker/npurun#readme) — user-facing intro and quickstart
+- [`roadmap.md`](roadmap.md) — wave-by-wave plan to v0.1.0
+- [`architecture.md`](architecture.md) — architectural decisions
+- [`troubleshooting.md`](troubleshooting.md) — every failure mode we've hit and how to fix
+- [`benchmarks.md`](benchmarks.md) — measured numbers
+- [`findings.md`](findings.md) — engineering writeup
+- [`paper.md`](paper.md) — formal experience-report
+- [`compatibility.md`](compatibility.md) — model compatibility matrix scaffold
+- [`CHANGELOG.md`](https://github.com/bpbonker/npurun/blob/main/CHANGELOG.md) — chronological log of changes
 
 ---
 
@@ -329,9 +327,6 @@ priorities flip:
   the LLM path goes through Genie.
 - **Phase 5 (`npu-convert`):** still useful for non-LLM models or for taking
   control of the conversion pipeline ourselves rather than relying on AI Hub.
-
-This pivot is reflected in the project memory file
-`~/.claude/projects/c--AAA-Personal-AI/memory/project_npurun.md`.
 
 ---
 

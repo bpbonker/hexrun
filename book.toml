@@ -1,11 +1,11 @@
-# mdBook configuration for the hexrun docs site.
+# mdBook configuration for the npurun docs site.
 # Builds the existing docs/*.md files into a static site under book/.
 # Local preview: `mdbook serve --open`
 # Build:         `mdbook build`
 # CI publishes via .github/workflows/docs.yml.
 
 [book]
-title = "hexrun"
+title = "npurun"
 description = "NPU-first local LLM runtime for Snapdragon X Elite (Windows on ARM)"
 authors = ["Brenden Bonker"]
 src = "docs"
@@ -15,10 +15,10 @@ multilingual = false
 [output.html]
 default-theme = "navy"
 preferred-dark-theme = "navy"
-git-repository-url = "https://github.com/bpbonker/hexrun"
+git-repository-url = "https://github.com/bpbonker/npurun"
 git-repository-icon = "fa-github"
-edit-url-template = "https://github.com/bpbonker/hexrun/edit/main/{path}"
-site-url = "/hexrun/"
+edit-url-template = "https://github.com/bpbonker/npurun/edit/main/{path}"
+site-url = "/npurun/"
 no-section-label = true
 
 [output.html.fold]

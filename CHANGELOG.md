@@ -246,6 +246,38 @@ All notable changes to npurun will be documented here. Format follows
   and CI matrix overview. The literal flow rather than the
   aspirational one.
 
+### Added — Phase 6.9 (docs site)
+
+- **mdBook docs site.** `book.toml` (rebranded from the leftover hexrun
+  config) + `docs/SUMMARY.md` (table of contents) + `docs/index.md`
+  (landing page) build the existing `docs/*.md` set into a static site
+  under `book/`. Local preview via `mdbook serve --open`.
+- **`.github/workflows/docs.yml`** runs `mdbook build` on every push
+  to `main` and deploys to GitHub Pages via `actions/deploy-pages@v4`;
+  PRs get build-only verification so a broken `SUMMARY.md` fails the
+  PR before merge. Path-filtered to `docs/**`, `book.toml`, and the
+  workflow itself so unrelated commits don't burn CI minutes.
+- One-time enablement per repo: Settings → Pages → Source: GitHub
+  Actions. After the first successful run on `main` the site is live
+  at `https://bpbonker.github.io/npurun/`.
+- README's `## Documentation` section now leads with a link to the
+  rendered site (search + navigable TOC); per-chapter links to
+  GitHub-rendered markdown remain for repo browsers.
+
+### Changed — docs cross-links
+
+- Fixed broken cross-references that would have rendered as 404s on
+  the docs site:
+  - `docs/architecture.md` no longer points at a personal Claude
+    plan path that lives outside the repo.
+  - `docs/handoff.md` "pair it with" list now uses repo-relative
+    links into the docs site (with absolute GitHub URLs for the
+    README and CHANGELOG, which sit outside the `docs/` tree); the
+    stale references to personal Claude state files were dropped.
+  - `docs/compatibility.md` link to the issue template is now an
+    absolute GitHub URL — relative `../.github/...` paths cannot
+    resolve from inside the rendered site.
+
 ### Pending for v0.1.0
 - README walkthrough screenshot/recording.
 - `npu-convert` Python pipeline for HF → bundle conversion (Phase 5).

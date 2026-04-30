@@ -85,7 +85,7 @@ Goal: turn 2+ of a multi-turn conversation is fast.
 | 6.6 | Production code signing | open | Need a real cert — Azure Trusted Signing ($10/mo), DigiCert/Sectigo standard ($200-400/yr), or EV cert. Once provisioned, expose thumbprint to CI as a secret. |
 | 6.7 | Public winget catalog submission | gated on 6.6 | PR to `microsoft/winget-pkgs`. Reviewers prefer signed installers. |
 | 6.8 | Self-hosted ARM64 CI runner | open | Enrol the dev laptop (or a dedicated X1E box) as a self-hosted runner with `QNN_SDK_ROOT` set as a secret; flip `release.yml` and `build-arm64-with-qnn` from `if: false`. |
-| 6.9 | Docs site | open | github.io. mkdocs / mdBook / similar. Wire up a `gh-pages.yml` workflow to publish on push to `main`. |
+| 6.9 | Docs site | done | mdBook (`book.toml` + `docs/SUMMARY.md` + `docs/index.md`) builds the existing `docs/*.md` set into a static site. `.github/workflows/docs.yml` runs `mdbook build` on every push to `main` and deploys to GitHub Pages via `actions/deploy-pages`; PRs get build-only verification so a broken `SUMMARY.md` fails the PR. Site goes live at `https://bpbonker.github.io/npurun/` once Settings → Pages → Source is set to "GitHub Actions" once. |
 
 ## Beyond v0.1.0 — explicitly deferred
 

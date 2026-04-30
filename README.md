@@ -168,6 +168,8 @@ with HTTP 429 + `Retry-After: 1` rather than queued indefinitely.
 
 ## Documentation
 
+The full docs are also rendered as a [browsable site with search](https://bpbonker.github.io/npurun/).
+
 - [`docs/handoff.md`](docs/handoff.md) — operational state and reproduction recipe
 - [`docs/findings.md`](docs/findings.md) — engineering blog post / contribution writeup
 - [`docs/benchmarks.md`](docs/benchmarks.md) — raw timings, methodology, comparison

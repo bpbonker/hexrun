@@ -54,3 +54,6 @@ qnn_profile_*.csv
 
 # Generated bindgen output (kept in OUT_DIR by default)
 /bindings.rs
+
+# mdBook output (built by .github/workflows/docs.yml)
+/book/

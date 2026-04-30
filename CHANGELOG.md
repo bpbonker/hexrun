@@ -305,14 +305,19 @@ Against the rebuilt rc.2 binary on Snapdragon X Elite NPU:
 - `npurun serve --model phi-3.5-mini` — `/healthz`, `/v1/models`, `/v1/chat/completions` (blocking + SSE), `/api/tags`, `/api/version`, `/api/chat` (blocking) all responsive and well-formed; CORS headers present; concurrent second request returns clean **HTTP 429 with `retry-after: 1`** instead of blocking.
 - `npurun ps` against the running server — reports correct status, model, uptime, auth state, version.
 
-### Known issues
+### Fixed — Ollama-compat timestamp date stuck at 1970-01-01
 
-- `/api/tags` and `/api/chat` emit `created_at: "1970-01-01T21:41:58Z"`
-  — the time-of-day is correct but the date sticks at the Unix epoch.
-  Looks like a `%H:%M:%S`-of-Duration formatter being concatenated
-  with a literal `1970-01-01` prefix instead of a proper `DateTime`
-  format. Cosmetic; most clients ignore the field. Track for a
-  follow-up patch.
+- `now_iso8601` in `npurun-server::ollama` was throwing the day count
+  away (`let _ = days;`) and slapping a literal `1970-01-01` prefix
+  onto the time-of-day, so every `created_at` / `modified_at` field
+  on `/api/tags` / `/api/chat` / `/api/generate` rendered with the
+  Unix-epoch date even though the time was correct. Replaced the
+  placeholder formatter with Howard Hinnant's `days_from_civil`
+  inverse (compact public-domain algorithm; no `chrono`/`time`
+  dependency). Four unit tests cover the epoch origin, leap-day 2024,
+  current-era 2026, and the century non-leap-year edge case (2100).
+  Verified live against a running server: `modified_at` now reports
+  `2026-04-30T21:53:32Z` instead of `1970-01-01T21:41:58Z`.
 
 ### Pending for v0.1.0
 - README walkthrough screenshot/recording.

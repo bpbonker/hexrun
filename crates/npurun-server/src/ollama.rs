@@ -610,19 +610,67 @@ fn no_model_loaded() -> (StatusCode, Json<serde_json::Value>) {
 fn now_iso8601() -> String {
     let secs = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
-        .map(|d| d.as_secs())
+        .map(|d| d.as_secs() as i64)
         .unwrap_or(0);
-    // Lightweight formatting; not strictly RFC-3339 nanosecond precision but
-    // good enough for Ollama clients that just want a "looks like a date" string.
-    let days = secs / 86400;
-    let rem = secs % 86400;
+    let days = secs.div_euclid(86_400);
+    let rem = secs.rem_euclid(86_400) as u64;
+    let (year, month, day) = epoch_days_to_ymd(days);
     let h = rem / 3600;
     let m = (rem % 3600) / 60;
     let s = rem % 60;
-    // Anchor on Unix epoch (1970-01-01) and approximate via days. Real
-    // calendar conversion can come later when we have a chrono/time dep.
-    let _ = days;
-    format!("1970-01-01T{h:02}:{m:02}:{s:02}Z")
+    format!("{year:04}-{month:02}-{day:02}T{h:02}:{m:02}:{s:02}Z")
+}
+
+// Howard Hinnant's `days_from_civil` inverse. Converts a count of days
+// since the Unix epoch (1970-01-01) into a Gregorian (year, month, day)
+// triple. Avoids pulling in `chrono`/`time` for this single call site.
+// Reference: http://howardhinnant.github.io/date_algorithms.html
+fn epoch_days_to_ymd(days: i64) -> (i32, u32, u32) {
+    let z = days + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = (z - era * 146_097) as u32; // [0, 146_096]
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365; // [0, 399]
+    let y = yoe as i64 + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100); // [0, 365]
+    let mp = (5 * doy + 2) / 153; // [0, 11]
+    let d = doy - (153 * mp + 2) / 5 + 1; // [1, 31]
+    let m = if mp < 10 { mp + 3 } else { mp - 9 }; // [1, 12]
+    let year = if m <= 2 { y + 1 } else { y };
+    (year as i32, m, d)
+}
+
+#[cfg(test)]
+mod date_tests {
+    use super::epoch_days_to_ymd;
+
+    #[test]
+    fn epoch_origin_is_1970_01_01() {
+        assert_eq!(epoch_days_to_ymd(0), (1970, 1, 1));
+    }
+
+    #[test]
+    fn handles_leap_day_2024() {
+        // 2024-02-29 is day 19_782 since 1970-01-01.
+        assert_eq!(epoch_days_to_ymd(19_782), (2024, 2, 29));
+        assert_eq!(epoch_days_to_ymd(19_783), (2024, 3, 1));
+    }
+
+    #[test]
+    fn handles_year_2026() {
+        // 2026-05-01 is day 20_574 since 1970-01-01: 56 full years
+        // (1970..2026) at 365 days each (= 20_440) plus 14 leap days
+        // (1972, 1976, ..., 2024) gives 20_454 days to 2026-01-01,
+        // plus 31+28+31+30 = 120 days into the year.
+        assert_eq!(epoch_days_to_ymd(20_574), (2026, 5, 1));
+    }
+
+    #[test]
+    fn handles_century_non_leap_2100() {
+        // 2100 is not a leap year (divisible by 100, not 400).
+        // 2100-03-01 is day 47_541 since 1970-01-01.
+        assert_eq!(epoch_days_to_ymd(47_540), (2100, 2, 28));
+        assert_eq!(epoch_days_to_ymd(47_541), (2100, 3, 1));
+    }
 }
 
 enum StreamItem {

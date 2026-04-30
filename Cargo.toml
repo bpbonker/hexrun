@@ -52,7 +52,7 @@ hex = "0.4"
 # ML
 ort = { version = "=2.0.0-rc.10", default-features = false, features = ["std", "load-dynamic"] }
 tokenizers = { version = "0.21", default-features = false, features = ["onig"] }
-ndarray = "0.16"
+ndarray = "0.17"
 half = "2"
 
 # Build / FFI

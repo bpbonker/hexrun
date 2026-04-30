@@ -4,6 +4,8 @@
 
 # Users
 
+- [Installation](install.md)
+- [Usage](usage.md)
 - [Handoff & current status](handoff.md)
 - [Benchmarks](benchmarks.md)
 - [Model compatibility](compatibility.md)

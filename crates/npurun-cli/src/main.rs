@@ -22,11 +22,11 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Cmd {
-    /// Download a model from the registry (Phase 3 — not yet implemented)
+    /// Download a model from the built-in registry. Sha256-verified, resumable.
     Pull { model: String },
     /// List locally cached models
     List,
-    /// Remove a locally cached model (Phase 3 — not yet implemented)
+    /// Remove a locally cached model from disk
     Rm { model: String },
     /// Show the manifest of a locally cached model
     Show {

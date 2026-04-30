@@ -10,6 +10,11 @@ deeper reference material that supports them.
 
 ## Where to start
 
+- Just want to install it? **[Installation](install.md)** covers MSIX,
+  zip, and build-from-source paths plus the QAIRT runtime requirement.
+- Already installed? **[Usage](usage.md)** is the working tour of every
+  subcommand (`pull` / `run` / `serve` / `bench` / `ps` / …) plus the
+  HTTP endpoint reference for OpenAI- and Ollama-compatible clients.
 - New here? Read **[Handoff & current status](handoff.md)** for a one-page
   picture of what works today, then **[Roadmap](roadmap.md)** for what's left
   before v0.1.0.

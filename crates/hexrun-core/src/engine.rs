@@ -5,7 +5,6 @@
 //! the feature, `Engine::generate` returns [`EngineError::FeatureDisabled`].
 
 use std::path::PathBuf;
-use std::sync::Arc;
 
 use thiserror::Error;
 #[cfg(feature = "genie")]
@@ -85,8 +84,11 @@ impl Engine {
     ///
     /// On the Genie backend, also opens the bundle's `genie_config.json`
     /// and creates the Genie dialog (the dialog stays resident in NPU
-    /// shared memory until [`Engine`] is dropped).
-    pub fn load(config: EngineConfig) -> Result<Arc<Self>, EngineError> {
+    /// shared memory until [`Engine`] is dropped). Returns a plain
+    /// `Engine` so callers can wrap it in whatever sharing primitive
+    /// fits their use case (`Arc<Mutex<Engine>>` for the HTTP server,
+    /// just `Engine` for the CLI's one-shot run).
+    pub fn load(config: EngineConfig) -> Result<Self, EngineError> {
         if !config.model_dir.is_dir() {
             return Err(EngineError::ModelDirMissing(config.model_dir.clone()));
         }
@@ -108,7 +110,7 @@ impl Engine {
     }
 
     #[cfg(feature = "genie")]
-    fn load_genie(manifest: Manifest, config: EngineConfig) -> Result<Arc<Self>, EngineError> {
+    fn load_genie(manifest: Manifest, config: EngineConfig) -> Result<Self, EngineError> {
         let genie_rel =
             manifest
                 .files
@@ -120,16 +122,16 @@ impl Engine {
         let genie_path = config.model_dir.join(genie_rel);
         debug!(path = %genie_path.display(), "opening Genie config");
         let dialog = qnn::Dialog::from_config_file(&genie_path)?;
-        Ok(Arc::new(Self {
+        Ok(Self {
             manifest,
             config,
             dialog,
-        }))
+        })
     }
 
     #[cfg(not(feature = "genie"))]
     #[allow(clippy::needless_pass_by_value)]
-    fn load_genie(_manifest: Manifest, _config: EngineConfig) -> Result<Arc<Self>, EngineError> {
+    fn load_genie(_manifest: Manifest, _config: EngineConfig) -> Result<Self, EngineError> {
         Err(EngineError::FeatureDisabled(Backend::Genie))
     }
 

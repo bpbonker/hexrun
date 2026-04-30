@@ -46,8 +46,15 @@ enum Cmd {
     },
     /// List in-flight sessions on a running `hexrun serve` (Phase 4)
     Ps,
-    /// Start the OpenAI- and Ollama-compatible HTTP server (Phase 4 — not yet implemented)
+    /// Start the OpenAI- and Ollama-compatible HTTP server. The named model
+    /// is loaded on startup and stays resident in NPU shared memory for
+    /// the lifetime of the server.
     Serve {
+        /// Model name (resolved like `hexrun run`) or absolute path
+        #[arg(long)]
+        model: Option<String>,
+        /// Bind address. Default 127.0.0.1:11435 so hexrun and Ollama can
+        /// run side-by-side (Ollama defaults to 11434).
         #[arg(long, default_value = "127.0.0.1:11435")]
         bind: SocketAddr,
     },
@@ -87,8 +94,43 @@ async fn main() -> Result<()> {
         Cmd::Ps => {
             println!("ps: (Phase 4 — not yet implemented)");
         }
-        Cmd::Serve { bind } => {
-            let state = hexrun_server::ServerState { engine: None };
+        Cmd::Serve { model, bind } => {
+            let state = match model.as_deref() {
+                Some(name) => {
+                    let dir = resolve_model_dir(name)?;
+                    let cfg = EngineConfig {
+                        model_dir: dir,
+                        ..Default::default()
+                    };
+                    let load_started = Instant::now();
+                    let engine = Engine::load(cfg)?;
+                    eprintln!(
+                        "[loaded {} ({}, {:?}, ctx {}) in {:.2?}]",
+                        engine.manifest().name,
+                        engine.manifest().arch,
+                        engine.manifest().quant,
+                        engine.manifest().context,
+                        load_started.elapsed()
+                    );
+                    let model_name = engine.manifest().name.clone();
+                    let arc_engine = std::sync::Arc::new(std::sync::Mutex::new(engine));
+                    hexrun_server::ServerState {
+                        engine: Some(arc_engine),
+                        model_name: Some(model_name),
+                    }
+                }
+                None => {
+                    eprintln!(
+                        "warning: starting hexrun serve without --model. Endpoints will return 503 \
+                         until a model is loaded."
+                    );
+                    hexrun_server::ServerState::default()
+                }
+            };
+            eprintln!(
+                "hexrun serve listening on http://{}\n  - OpenAI-compatible: POST /v1/chat/completions, GET /v1/models\n  - Ollama-compatible: POST /api/generate, POST /api/chat, GET /api/tags\n  - GET /healthz",
+                bind
+            );
             hexrun_server::serve(bind, state).await?;
         }
     }
@@ -230,17 +272,17 @@ fn run_model(model: &str, prompt: &str) -> Result<()> {
     );
 
     let infer_started = Instant::now();
-    let mut tokens_seen = 0usize;
+    let mut chunks_seen = 0usize;
     engine.generate_streaming(prompt, |chunk| {
-        tokens_seen += 1;
+        chunks_seen += 1;
         print!("{chunk}");
         std::io::stdout().flush().ok();
     })?;
     let infer_elapsed = infer_started.elapsed();
     println!();
     eprintln!(
-        "[generated {tokens_seen} chunks in {infer_elapsed:.2?}; ~{:.1} chunks/s]",
-        tokens_seen as f64 / infer_elapsed.as_secs_f64()
+        "[generated {chunks_seen} chunks in {infer_elapsed:.2?}; ~{:.1} chunks/s]",
+        chunks_seen as f64 / infer_elapsed.as_secs_f64()
     );
     Ok(())
 }

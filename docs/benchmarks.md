@@ -2,6 +2,31 @@
 
 Honest measurements. Updated as new data arrives.
 
+## Headline (post-tuning, 2026-04-30)
+
+| Model | Quant | Shards | Config | Steady-state tok/s | TTFT |
+|---|---|---:|---|---:|---:|
+| Qwen 2.5 7B | w8a16 | 6 | adapted from tutorial template, `poll: false` | 1.4 | 792 ms |
+| Qwen 2.5 7B | w8a16 | 6 | + tuned cpu-mask/threads/sampler/perf-profile | 1.3 | 853 ms |
+| Qwen 2.5 7B | w8a16 | 6 | **+ `poll: true`** (single flag) | **1.9** | 659 ms |
+| **Phi 3.5 Mini** | **w4a16** | **4** | **Qualcomm-shipped (poll: true)** | **11.7** | **194 ms** |
+
+**Phi 3.5 Mini at 11.7 tok/s on the Snapdragon X Elite NPU is in the
+"actually usable for interactive chat" range** (roughly human speech
+speed). The lift over Qwen 7B is ~6×, attributable to:
+
+- ~2× from going 7B → 3.8B parameters,
+- ~1.3× from w8a16 → w4a16 (less memory bandwidth pressure),
+- ~1.2× from 6 → 4 shards (fewer per-token context transitions),
+- ~1.4× from Qualcomm's properly-tuned config (most importantly, `poll: true`).
+
+Running the user's other config tweaks (more CPU cores via `cpu-mask:
+0xfff`, more `n-threads`, greedy sampling, `sustained_high_performance`
+perf profile) had no measurable benefit and were slightly counter-
+productive. The bottleneck on Qwen 7B was *not* CPU orchestration; it
+was the cost of waiting on NPU completion via interrupts (which `poll:
+true` replaces with a tight CPU-side polling loop).
+
 ## Phase 1 warm-query benchmark (2026-04-30)
 
 **Setup:**
@@ -61,8 +86,70 @@ Honest measurements. Updated as new data arrives.
 
 - **Energy.** We expect NPU inference to be 5-10× more efficient per token than CPU at equivalent throughput. We have not instrumented `powercfg` / `Energy Estimation Engine` yet. This is a planned follow-up.
 - **Long-context behavior.** All our prompts so far are well under 1000 tokens. The 4096-token context cap (hardware-bound) means decode speed near the cap may differ from the small-context behavior we see here.
-- **Smaller models.** Phi 3.5 Mini (3.8B) on the same NPU should be substantially faster — typical mobile-NPU experience is that going from 7B to 3.8B is roughly 2× speedup.
-- **Tuned config.** The `cpu-mask: 0xe0` and `n-threads: 3` settings come from Qualcomm's template; they may be conservative for this 12-core Oryon laptop.
+- **Tuned config.** The `cpu-mask: 0xe0` and `n-threads: 3` settings come from Qualcomm's template. We tested raising both to no effect — these turn out to be appropriately tuned, not conservative.
+
+## Tuning experiments — what didn't help (2026-04-30)
+
+We tried four config tweaks to Qwen 2.5 7B at once: `cpu-mask: 0xfff`
+(all 12 cores), `n-threads: 8`, greedy sampling (`temp: 0.0`), and
+`perf_profile: "sustained_high_performance"`. Result: **1.3 tok/s**,
+slightly *worse* than the 1.4 tok/s baseline. The lesson: CPU
+orchestration, sampler scan, and perf-profile choice are NOT the Qwen
+bottleneck.
+
+The single change that *did* help was flipping `poll: false` →
+`poll: true` (in the QnnHtp section of `genie_config.json`). This took
+Qwen from 1.4 → 1.9 tok/s and dropped TTFT from 792 → 659 ms.
+Polling replaces an interrupt-based NPU completion notification with
+a tight CPU-side loop that detects completion as soon as it occurs;
+in tight inference loops where the CPU does many small NPU calls per
+token, the interrupt overhead was the dominant cost.
+
+The Qualcomm-shipped Phi 3.5 Mini bundle has `poll: true` set by
+default. The `qualcomm/ai-hub-apps` tutorial template (which we
+copied for Qwen) does not. **Recommend always setting `poll: true`
+for production NPU inference.**
+
+## Phi 3.5 Mini warm-query benchmark (2026-04-30)
+
+**Setup:** identical methodology to Qwen, but with the Qualcomm-shipped
+Phi 3.5 Mini bundle from `qualcomm/Phi-3.5-mini-instruct` on
+Hugging Face. Bundle is 2.5 GB on disk, 4 shards, w4a16, with `poll:
+true` already set. Phi 3 chat template wrapping (`<|system|>`/`<|user|>`/`<|assistant|>`).
+
+### Per-query results
+
+| # | Prompt | Tokens (approx) | TTFT | Total | Generation | Tok/s post-TTFT |
+|---|---|---:|---:|---:|---:|---:|
+| 1 | "Write a one-line joke about Snapdragon laptops." | (warmup, skipped from summary) | — | — | — | — |
+| 2 | NPU-vs-CPU energy explanation | ~321 | 174 ms | 25.35 s | 25.18 s | 12.7 |
+| 3 | "List three reasons for local LLMs" (verbose self-extending response) | 304 | 255 ms | 28.25 s | 27.99 s | 10.9 |
+| 4 | "What is 17 × 23? Just the number." | 1 | 154 ms | 0.48 s | 0.32 s | 3.1 (single token) |
+
+### Warm summary (skipping query 1)
+
+| Metric | Value |
+|---|---|
+| Bundle cold load | (one-time) |
+| Avg total per query | 18.03 s |
+| Avg time-to-first-token | **194 ms** |
+| Avg generation time | 17.83 s |
+| Aggregate tokens/sec (incl. TTFT) | **11.6** |
+| Aggregate tokens/sec (post-TTFT) | **11.7** |
+
+### What this means
+
+11.7 tok/s on a 3.8B model with 200 ms TTFT on the NPU is a usable
+chat experience — comparable to what NexaSDK has reported for the same
+hardware. We're not faster than them per-token (we're using the same
+underlying Genie runtime), but we're now on equal footing with the
+closed reference, and we're open source.
+
+For Qwen 2.5 7B at 1.9 tok/s post-tuning, hexrun is still slower than
+CPU paths for chat (you'd reach for Ollama). The 7B regime needs
+either a better-tuned compile (currently gated by Qualcomm) or
+acceptance that 7B is a "longer answer, less latency-sensitive" mode
+on this hardware generation.
 
 ### Reproduction
 

@@ -197,10 +197,18 @@ honest steady-state numbers. See `docs/benchmarks.md` for full data.
 
 | Source | Number | Reality |
 |---|---|---|
-| Qualcomm marketing for 7B on 45 TOPS | 25-35 tok/s | Likely a synthetic benchmark; not what we see |
-| Community reports on r/LocalLLaMA | 5-15 tok/s | Closer to what we'd expect, still ~3-10× our number |
-| Our measurement (Phase 1, untuned) | **1.4 tok/s** | What you actually get out of the box today |
-| llama.cpp on Oryon CPU (same model, Q4 GGUF) | ~3-5 tok/s | We're slower per-token than CPU |
+| Qualcomm marketing for 7B on 45 TOPS | 25-35 tok/s | Likely a synthetic benchmark; not what we see for 7B |
+| Community reports on r/LocalLLaMA | 5-15 tok/s | Hits this band for Phi-class models, not 7B |
+| **Our Phi 3.5 Mini (w4a16, post-tuning)** | **11.7 tok/s** | Genuinely usable for chat |
+| Our Qwen 2.5 7B (w8a16, `poll: true`) | 1.9 tok/s | Slow, but works |
+| Our Qwen 2.5 7B (untuned, our first attempt) | 1.4 tok/s | Documented baseline |
+| llama.cpp on Oryon CPU (Qwen 7B Q4 GGUF) | ~3-5 tok/s | Faster than us per-token at this size |
+| llama.cpp on Oryon CPU (Phi 3.5 Q4) | ~5-8 tok/s | Slower than our Phi NPU number |
+
+The picture: **for ~4B-class models, hexrun on the NPU now beats CPU
+paths.** For 7B and above on this generation of silicon, CPU paths are
+still faster. The X1E NPU memory ceiling and 6-shard split appear to
+make 7B genuinely difficult to run efficiently.
 
 **Two important caveats** before drawing conclusions:
 

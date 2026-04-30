@@ -12,9 +12,9 @@ labels: compatibility
 - Parameters:
 - Quantization tried (int8 / int8-w-int16-a / int4):
 
-## Conversion via hex-convert
+## Conversion via npu-convert
 
-- Did `hex-convert convert <id>` succeed?
+- Did `npu-convert convert <id>` succeed?
 - Stage at which it failed (export / genai_builder / quantize / context-binary compile):
 - Error output:
 

@@ -12,11 +12,11 @@ In scope for security reports:
 
 - Code execution from a malicious model file or manifest (path traversal,
   archive extraction, deserialization, allocator abuse).
-- Authentication / authorization bypasses in `hexrun serve`.
+- Authentication / authorization bypasses in `npurun serve`.
 - Memory unsafety in `qnn` / `qnn-sys` (FFI boundary).
-- TOCTOU / atomicity bugs in `hexrun-registry` cache writes.
+- TOCTOU / atomicity bugs in `npurun-registry` cache writes.
 - HTTP request smuggling, header injection, SSE injection in the server.
-- Insecure defaults (e.g. `hexrun serve` binding to `0.0.0.0` without
+- Insecure defaults (e.g. `npurun serve` binding to `0.0.0.0` without
   authentication when documentation implies otherwise).
 
 Out of scope:
@@ -28,7 +28,7 @@ Out of scope:
 
 ## Hardening choices that are not bugs
 
-- `hexrun serve` defaults to `127.0.0.1`. Binding to a non-loopback
+- `npurun serve` defaults to `127.0.0.1`. Binding to a non-loopback
   interface without an auth token is intentionally allowed but
   documented as user-managed risk.
 - Model files are downloaded from the configured registry over HTTPS and

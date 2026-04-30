@@ -1,6 +1,6 @@
 # Release runbook
 
-Step-by-step for cutting a hexrun release. Aims to be the literal
+Step-by-step for cutting a npurun release. Aims to be the literal
 copy-paste flow rather than aspirational.
 
 ## Pre-flight (once per machine)
@@ -45,19 +45,19 @@ pwsh -File scripts\build-msix.ps1 -Version $v
 ```
 
 Outputs:
-- `dist\hexrun-$v-aarch64-windows.zip` and `.zip.sha256`
-- `dist\hexrun-$v-aarch64-windows.msix` and `.msix.sha256`
+- `dist\npurun-$v-aarch64-windows.zip` and `.zip.sha256`
+- `dist\npurun-$v-aarch64-windows.msix` and `.msix.sha256`
 
 ### 3. Smoke-test the zip
 
 On a clean PowerShell session (so no env state leaks in):
 
 ```powershell
-$work = mkdir "$env:TEMP\hexrun-smoke-$v" -Force
-Expand-Archive "dist\hexrun-$v-aarch64-windows.zip" -DestinationPath $work
-$work\hexrun.exe version
-$env:HEXRUN_MODELS_DIR = "$env:LOCALAPPDATA\hexrun\models"
-$work\hexrun.exe show phi-3.5-mini   # if you have it cached
+$work = mkdir "$env:TEMP\npurun-smoke-$v" -Force
+Expand-Archive "dist\npurun-$v-aarch64-windows.zip" -DestinationPath $work
+$work\npurun.exe version
+$env:NPURUN_MODELS_DIR = "$env:LOCALAPPDATA\npurun\models"
+$work\npurun.exe show phi-3.5-mini   # if you have it cached
 ```
 
 If `version` errors with a DLL load failure, your `QNN_SDK_ROOT`
@@ -72,10 +72,10 @@ git tag -a v$v -m "v$v"
 git push origin v$v
 
 gh release create v$v `
-    "dist\hexrun-$v-aarch64-windows.zip" `
-    "dist\hexrun-$v-aarch64-windows.zip.sha256" `
-    "dist\hexrun-$v-aarch64-windows.msix" `
-    "dist\hexrun-$v-aarch64-windows.msix.sha256" `
+    "dist\npurun-$v-aarch64-windows.zip" `
+    "dist\npurun-$v-aarch64-windows.zip.sha256" `
+    "dist\npurun-$v-aarch64-windows.msix" `
+    "dist\npurun-$v-aarch64-windows.msix.sha256" `
     --title "v$v" `
     --notes-file "dist\RELEASE_NOTES.md" `
     --prerelease   # drop for stable
@@ -95,25 +95,25 @@ bump the version + hash, and validate.
 # Copy the previous version's manifests as a starting point:
 $prev = "0.1.0-rc.1"
 Copy-Item -Recurse `
-    "manifests\b\bpbonker\hexrun\$prev" `
-    "manifests\b\bpbonker\hexrun\$v"
+    "manifests\b\bpbonker\npurun\$prev" `
+    "manifests\b\bpbonker\npurun\$v"
 
 # Edit the three .yaml files in the new dir:
-#   - bpbonker.hexrun.yaml             — bump PackageVersion
-#   - bpbonker.hexrun.locale.en-US.yaml — bump PackageVersion + ReleaseNotesUrl
-#   - bpbonker.hexrun.installer.yaml   — bump PackageVersion + InstallerUrl + InstallerSha256
+#   - bpbonker.npurun.yaml             — bump PackageVersion
+#   - bpbonker.npurun.locale.en-US.yaml — bump PackageVersion + ReleaseNotesUrl
+#   - bpbonker.npurun.installer.yaml   — bump PackageVersion + InstallerUrl + InstallerSha256
 #
-# The sha256 is whatever you wrote into dist\hexrun-$v-aarch64-windows.zip.sha256,
+# The sha256 is whatever you wrote into dist\npurun-$v-aarch64-windows.zip.sha256,
 # uppercased.
 
-winget validate --manifest "manifests\b\bpbonker\hexrun\$v"
+winget validate --manifest "manifests\b\bpbonker\npurun\$v"
 ```
 
 Commit the manifest dir alongside any other release-prep changes.
 
 ### Submitting to the public winget catalog (optional, requires signed MSIX)
 
-`winget install bpbonker.hexrun` works against Microsoft's public
+`winget install bpbonker.npurun` works against Microsoft's public
 catalog only after the manifest is merged into
 `microsoft/winget-pkgs`. That requires:
 
@@ -121,15 +121,15 @@ catalog only after the manifest is merged into
    doesn't qualify; a `.zip` with a portable nested binary does
    work but the catalog reviewers prefer signed installers.
 2. A pull request to `microsoft/winget-pkgs` with the manifest dir
-   placed at `manifests/b/bpbonker/hexrun/$v/`.
+   placed at `manifests/b/bpbonker/npurun/$v/`.
 3. Passing the catalog's automated validation (it will install the
    package on a sandbox VM and run a sanity check).
 
 Until then, users can install directly from this repo:
 
 ```powershell
-gh repo clone bpbonker/hexrun
-winget install --manifest hexrun\manifests\b\bpbonker\hexrun\0.1.0-rc.1
+gh repo clone bpbonker/npurun
+winget install --manifest npurun\manifests\b\bpbonker\npurun\0.1.0-rc.1
 ```
 
 ## Code signing
@@ -173,8 +173,8 @@ Cloud CI (`.github\workflows\ci.yml`):
 | `fmt-clippy` | `windows-latest` (x64) | `cargo fmt --check`, `cargo clippy` on the non-QNN crates |
 | `build-default` | `windows-latest` (x64) | `cargo build` on the non-QNN crates |
 | `test-default` | `windows-latest` (x64) | `cargo test` on the non-QNN crates |
-| `python-lint` | `windows-latest` | `ruff check` on `python/hex-convert/` |
-| `python-test` | `windows-latest` | `pytest` on `python/hex-convert/` |
+| `python-lint` | `windows-latest` | `ruff check` on `python/npu-convert/` |
+| `python-test` | `windows-latest` | `pytest` on `python/npu-convert/` |
 | `winget-validate` | `windows-latest` | `winget validate` on every published manifest dir |
 
 QAIRT is not in cloud CI (Qualcomm's SDK is non-redistributable);

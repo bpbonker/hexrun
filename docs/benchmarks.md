@@ -32,7 +32,7 @@ true` replaces with a tight CPU-side polling loop).
 **Setup:**
 - Hardware: Microsoft Surface laptop, Snapdragon X Elite X1E80100, 16 GB shared LPDDR5x, 7.8 GB shared NPU memory
 - Bundle: Qwen 2.5 7B Instruct, w8a16 quantized, 6 ctx-bin shards (4.6 GB), context length 4096, sequence length 128
-- Runtime: hexrun's `qnn::genie::Dialog` calling Qualcomm's libGenie 1.17.0 directly via Rust FFI (no `genie-t2t-run.exe` shell-out)
+- Runtime: npurun's `qnn::genie::Dialog` calling Qualcomm's libGenie 1.17.0 directly via Rust FFI (no `genie-t2t-run.exe` shell-out)
 - Sampler: `temperature=0.8, top_k=40, top_p=0.95` (Qualcomm AI Hub defaults for Qwen)
 - HTP perf profile: `burst`
 - Battery state: plugged in
@@ -76,7 +76,7 @@ true` replaces with a tight CPU-side polling loop).
 
 | Path | tok/s steady-state | Notes |
 |---|---:|---|
-| **hexrun (this work, Qwen 2.5 7B INT4 on NPU)** | ~1.4 | Measured today |
+| **npurun (this work, Qwen 2.5 7B INT4 on NPU)** | ~1.4 | Measured today |
 | Ollama Qwen 2.5 7B Q4_0_4_8 on Oryon CPU | ~3-5 (estimated) | Per llama.cpp discussion #8273 — needs local confirmation |
 | Genie CLI (genie-t2t-run.exe), same model | ~1.4 | Same Genie runtime under the hood; we use it directly |
 | NexaSDK on NPU (closed) | reported similar | Closed runtime; can't independently verify |
@@ -145,7 +145,7 @@ hardware. We're not faster than them per-token (we're using the same
 underlying Genie runtime), but we're now on equal footing with the
 closed reference, and we're open source.
 
-For Qwen 2.5 7B at 1.9 tok/s post-tuning, hexrun is still slower than
+For Qwen 2.5 7B at 1.9 tok/s post-tuning, npurun is still slower than
 CPU paths for chat (you'd reach for Ollama). The 7B regime needs
 either a better-tuned compile (currently gated by Qualcomm) or
 acceptance that 7B is a "longer answer, less latency-sensitive" mode
@@ -165,7 +165,7 @@ Source: `crates/qnn/examples/qwen-bench.rs`. The benchmark prints raw per-query 
 battery (mandatory — Windows `BatteryStatus.DischargeRate` is only
 populated when discharging). Display dimmed, no other apps active.
 Sampled `Win32_Battery.DischargeRate` at 2 Hz for 15 s of idle, then
-during a `hexrun bench phi-3.5-mini --repeats 2` run (8 queries total).
+during a `npurun bench phi-3.5-mini --repeats 2` run (8 queries total).
 
 | Metric | Value |
 |---|---:|

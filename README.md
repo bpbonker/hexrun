@@ -1,10 +1,10 @@
-# hexrun
+# npurun
 
 **NPU-first local LLM runtime for Snapdragon X Elite (Windows on ARM).**
 
 Today, popular open-source LLM tools (Ollama, llama.cpp, LM Studio,
 text-generation-webui) run CPU-only on Snapdragon X Elite laptops — the
-45 TOPS Hexagon NPU sits idle. hexrun fixes that. Native Rust runtime
+45 TOPS Hexagon NPU sits idle. npurun fixes that. Native Rust runtime
 on top of Qualcomm's Genie SDK, an Ollama-class CLI, and an
 OpenAI/Ollama-compatible HTTP server. Verified on hardware.
 
@@ -19,17 +19,17 @@ OpenAI/Ollama-compatible HTTP server. Verified on hardware.
 ## Quick start (≈5 minutes once prerequisites are in place)
 
 ```powershell
-# Install hexrun once your prerequisites are in place (see below).
-cargo install --path crates/hexrun-cli
+# Install npurun once your prerequisites are in place (see below).
+cargo install --path crates/npurun-cli
 
 # Download a model — auto-extracts and writes a manifest.
-hexrun pull phi-3.5-mini
+npurun pull phi-3.5-mini
 
 # Run a one-shot generation. Streams tokens to stdout.
-hexrun run phi-3.5-mini "Tell me a one-line joke about Snapdragon laptops."
+npurun run phi-3.5-mini "Tell me a one-line joke about Snapdragon laptops."
 
 # Or run as an OpenAI/Ollama-compatible HTTP server.
-hexrun serve --model phi-3.5-mini
+npurun serve --model phi-3.5-mini
 
 # Then point Open WebUI (or any OpenAI/Ollama client) at:
 #   http://localhost:11435
@@ -43,15 +43,15 @@ full operational state.
 
 | Subcommand | What it does |
 |---|---|
-| `hexrun pull <name>` | Download a known model, extract, auto-write `hexrun.json`. sha256 verified. Resumable. |
-| `hexrun list` | Show locally cached models. |
-| `hexrun show <name>` | Print the manifest of a cached model. |
-| `hexrun run <name> "<prompt>"` | One-shot generation; streams to stdout. |
-| `hexrun bench <name>` | Warm-query benchmark; per-prompt + aggregate tokens/sec. |
-| `hexrun serve --model <name>` | OpenAI- and Ollama-compatible HTTP server. SSE streaming, CORS, optional bearer-token auth. |
-| `hexrun rm <name>` | Delete a cached model. |
-| `hexrun ps` | Probe a running `hexrun serve` and print model + uptime + auth state. |
-| `hexrun version` | Print hexrun, libGenie, and QAIRT SDK versions. |
+| `npurun pull <name>` | Download a known model, extract, auto-write `npurun.json`. sha256 verified. Resumable. |
+| `npurun list` | Show locally cached models. |
+| `npurun show <name>` | Print the manifest of a cached model. |
+| `npurun run <name> "<prompt>"` | One-shot generation; streams to stdout. |
+| `npurun bench <name>` | Warm-query benchmark; per-prompt + aggregate tokens/sec. |
+| `npurun serve --model <name>` | OpenAI- and Ollama-compatible HTTP server. SSE streaming, CORS, optional bearer-token auth. |
+| `npurun rm <name>` | Delete a cached model. |
+| `npurun ps` | Probe a running `npurun serve` and print model + uptime + auth state. |
+| `npurun version` | Print npurun, libGenie, and QAIRT SDK versions. |
 
 ## Why this exists
 
@@ -63,7 +63,7 @@ full operational state.
 | text-generation-webui | none ([#6298](https://github.com/oobabooga/text-generation-webui/issues/6298)) |
 | Microsoft Phi Silica | NPU, but locked to first-party Copilot apps |
 | NexaSDK | NPU, but closed CLI |
-| **hexrun** | NPU, open Rust, embeddable |
+| **npurun** | NPU, open Rust, embeddable |
 
 ## Performance, honestly
 
@@ -93,7 +93,7 @@ regime is currently slower than CPU on this generation of silicon — see
 
 The QAIRT SDK is **not redistributable** — install it manually from the
 Qualcomm developer portal. Run `pwsh -File scripts\setup-qnn.ps1` to
-validate the install before building hexrun.
+validate the install before building npurun.
 
 For full setup details and every toolchain papercut we hit while
 building this, see [`docs/troubleshooting.md`](docs/troubleshooting.md)
@@ -101,7 +101,7 @@ and [`docs/handoff.md`](docs/handoff.md).
 
 ## Built-in model registry
 
-`hexrun pull <name>` knows about a small set of pre-built bundles
+`npurun pull <name>` knows about a small set of pre-built bundles
 hosted on Qualcomm's HuggingFace org:
 
 | Name | Size | Verified |
@@ -112,15 +112,15 @@ hosted on Qualcomm's HuggingFace org:
 
 A remote registry beyond the hardcoded list is planned (Phase 5). For
 adding models that aren't in the built-in registry today, see
-[`python/hex-convert/`](python/hex-convert/) — a Python sidecar that
+[`python/npu-convert/`](python/npu-convert/) — a Python sidecar that
 takes any Genie bundle (downloaded or built locally) and writes the
-`hexrun.json` manifest the runtime needs.
+`npurun.json` manifest the runtime needs.
 
 ## Architecture (one paragraph)
 
 `qnn-sys` (raw FFI to QNN + Genie) ← `qnn` (safe Rust wrappers) ←
-`hexrun-core::Engine` (loads bundles, applies chat templates, runs
-inference) ← `hexrun-cli` (CLI) and `hexrun-server` (axum HTTP server).
+`npurun-core::Engine` (loads bundles, applies chat templates, runs
+inference) ← `npurun-cli` (CLI) and `npurun-server` (axum HTTP server).
 The server holds a single `Arc<Engine>` plus a `tokio::sync::Semaphore`
 with a single permit so concurrent requests serialize cleanly with
 HTTP 429s instead of head-of-line blocking. Streaming is async via
@@ -133,22 +133,22 @@ Three independent checks. **All three must agree** before claiming NPU
 acceleration:
 
 1. **Task Manager → Performance → NPU** shows sustained utilization
-   during a `hexrun run` — typically 19–30% for a 4 GB-class model with
+   during a `npurun run` — typically 19–30% for a 4 GB-class model with
    most of NPU shared memory in use.
 2. The bundle's compile metadata says `target_runtime: qnn_dlc` against
-   `Snapdragon X Elite CRD`. Check `hexrun show <name>` for the manifest;
+   `Snapdragon X Elite CRD`. Check `npurun show <name>` for the manifest;
    the underlying compile happened in Qualcomm's cloud.
-3. `hexrun bench <name>` reports tokens/sec at least 3× a CPU baseline
+3. `npurun bench <name>` reports tokens/sec at least 3× a CPU baseline
    on the same model, **or** (more reliably) >5 tok/s for ~4B models on
    the NPU.
 
-If the NPU column is at 0% but `hexrun run` is producing text, you are
+If the NPU column is at 0% but `npurun run` is producing text, you are
 silently on CPU fallback — file an issue with the output of
-`hexrun version`.
+`npurun version`.
 
 ## Server: LAN-deployable
 
-`hexrun serve` accepts `--bind 0.0.0.0:11435` so the server is reachable
+`npurun serve` accepts `--bind 0.0.0.0:11435` so the server is reachable
 from other devices on your network. Pair with `--auth-token <TOKEN>` to
 require `Authorization: Bearer <TOKEN>` on `/v1/*` and `/api/*`.
 Endpoints:
@@ -160,7 +160,7 @@ Endpoints:
 - Health: `GET /healthz` (returns JSON with model, uptime, version)
 
 Ollama-style `<name>:latest` references work everywhere — the CLI, the
-server, and `hexrun ps` all strip the tag and serve the bare name.
+server, and `npurun ps` all strip the tag and serve the bare name.
 
 CORS is permissive so browser-based clients (Open WebUI, custom UIs) can
 hit the server cross-origin. Concurrent requests beyond one are rejected
@@ -184,22 +184,22 @@ with HTTP 429 + `Retry-After: 1` rather than queued indefinitely.
 
 - [x] Phase 0 — NPU verified end-to-end with Qwen 2.5 7B on hardware
 - [x] Phase 1 — Native Rust bindings to libGenie / QNN
-- [x] Phase 2 — `hexrun list/show/run` CLI
-- [x] Phase 3 — `hexrun pull/rm` with built-in registry
+- [x] Phase 2 — `npurun list/show/run` CLI
+- [x] Phase 3 — `npurun pull/rm` with built-in registry
 - [x] Phase 4 — HTTP server (OpenAI + Ollama compat, SSE/NDJSON streaming)
 - [x] Server LAN safety: CORS, `--auth-token`, warmup, rich `/healthz`,
   HTTP 429 backpressure, graceful shutdown
 - [x] Pull integrity: sha256 verification + resumable downloads
 - [x] Ollama parity: `:latest` aliases, `/api/version`, `/api/show`,
-  `/api/delete`, `hexrun ps` against a running server
+  `/api/delete`, `npurun ps` against a running server
 - [x] Energy measurement: ~1.27 J/token at ~6.9 W delta on Phi 3.5 Mini
 - [x] Multi-turn chat via Genie KV-cache prefix matching
   (`SentenceCode::Rewind`) — turn N pays the prefill cost only for
   the new tokens, not the whole transcript
 
 **In progress:**
-- [x] Phase 5 (starter): `hex-convert manifest` + `hex-convert inspect`
-  for local Genie bundles; `hex-convert export` shells out to
+- [x] Phase 5 (starter): `npu-convert manifest` + `npu-convert inspect`
+  for local Genie bundles; `npu-convert export` shells out to
   `qai-hub-models`. Curated recipe set; remote registry still open.
 - [x] Phase 6 (starter): winget manifest (zip installer, validated),
   tag-triggered release workflow, expanded CI matrix
@@ -213,7 +213,7 @@ See [`docs/roadmap.md`](docs/roadmap.md) for the detailed wave plan.
 
 ## Support the work
 
-hexrun is independently maintained. If it saved you time, or you want
+npurun is independently maintained. If it saved you time, or you want
 to see the roadmap items above land sooner, you can [☕ buy me a coffee](https://buymeacoffee.com/bpbprofessional).
 
 Tips fund the unglamorous parts — toolchain debugging, NPU SDK spelunking,

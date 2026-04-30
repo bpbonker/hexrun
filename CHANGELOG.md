@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to hexrun will be documented here. Format follows
+All notable changes to npurun will be documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [SemVer](https://semver.org/spec/v2.0.0.html).
 
@@ -12,8 +12,8 @@ All notable changes to hexrun will be documented here. Format follows
   QAIRT headers) and the safe `qnn::Dialog` wrapper. `Genie.lib` is
   statically linked; `QnnSystem.dll` (which ships without a `.lib`) is
   reserved for future `libloading`-based dynamic dispatch.
-- `hexrun-core::Engine` loads a model directory containing
-  `hexrun.json` and the bundle's `genie_config.json`, applies the
+- `npurun-core::Engine` loads a model directory containing
+  `npurun.json` and the bundle's `genie_config.json`, applies the
   manifest's chat template, and runs blocking or streaming inference
   against the held `qnn::Dialog`.
 - Manifest schema: `name`, `version`, `arch`, `vocab`, `context`,
@@ -23,24 +23,24 @@ All notable changes to hexrun will be documented here. Format follows
 - Engine + manifest validation rejects path traversal, absolute paths,
   drive prefixes, malformed sha256, and bad `qnn_sdk` versions.
 
-### Added — CLI (`hexrun`)
+### Added — CLI (`npurun`)
 
-- `hexrun pull <name>` — download a known bundle from the built-in
+- `npurun pull <name>` — download a known bundle from the built-in
   registry, extract, sha256-verify the zip, and auto-write a manifest.
   Resumable via HTTP `Range`. Built-in registry currently covers
   `phi-3.5-mini`, `llama-v3-1-8b-instruct`, `qwen-2-5-7b`.
-- `hexrun list` / `hexrun show <name>` / `hexrun rm <name>` —
+- `npurun list` / `npurun show <name>` / `npurun rm <name>` —
   enumerate, inspect, and delete cached models.
-- `hexrun run <name> "<prompt>"` — one-shot generation, streams to
+- `npurun run <name> "<prompt>"` — one-shot generation, streams to
   stdout with timing summary on stderr.
-- `hexrun bench <name>` — warm-query benchmark; per-prompt
+- `npurun bench <name>` — warm-query benchmark; per-prompt
   TTFT/total/gen-time/post-TTFT-tok/s plus an aggregate summary that
   skips the first query.
-- `hexrun version` — hexrun + libGenie + QAIRT versions in one shot.
-- `hexrun serve --model <name>` — OpenAI- and Ollama-compatible HTTP
+- `npurun version` — npurun + libGenie + QAIRT versions in one shot.
+- `npurun serve --model <name>` — OpenAI- and Ollama-compatible HTTP
   server. Loads the model on startup, runs a small warmup query so the
   first user request is steady-state, then binds the listener.
-- TTY-aware progress in `hexrun pull` (indicatif progress bar
+- TTY-aware progress in `npurun pull` (indicatif progress bar
   interactively; periodic log lines in non-interactive shells).
 
 ### Added — HTTP server
@@ -74,7 +74,7 @@ All notable changes to hexrun will be documented here. Format follows
   and (when set) QAIRT bin/lib to PATH, sets `ADSP_LIBRARY_PATH`. Run
   any `cargo` invocation through it.
 - `scripts/genie-run.ps1` shells out to `genie-t2t-run.exe` for the
-  legacy Phase 0 path (kept for documentation; superseded by `hexrun
+  legacy Phase 0 path (kept for documentation; superseded by `npurun
   run`).
 - README, CONTRIBUTING, SECURITY, CODE_OF_CONDUCT, issue and PR
   templates, dependabot config, EditorConfig, rustfmt/clippy/deny
@@ -107,7 +107,7 @@ All notable changes to hexrun will be documented here. Format follows
 
 ### Added — Ollama parity
 
-- `GET /api/version` returning the running hexrun version.
+- `GET /api/version` returning the running npurun version.
 - `POST /api/show` returning Ollama-shaped model info
   (`details.family`, `details.parameter_size`,
   `details.quantization_level`, `template`, `system`, plus a
@@ -115,12 +115,12 @@ All notable changes to hexrun will be documented here. Format follows
 - `POST /api/delete` removing a cached model from disk; refuses with
   HTTP 409 if the named model is the one this server has loaded.
 - `<name>:latest` (and any `<name>:<tag>`) is now accepted everywhere a
-  model name is — `hexrun run`, `hexrun show`, `hexrun bench`,
+  model name is — `npurun run`, `npurun show`, `npurun bench`,
   `/v1/chat/completions`, `/api/generate`, `/api/chat`, `/api/show`,
   `/api/delete`. `/v1/models` advertises both the bare and tagged
   forms; `/api/tags` advertises the `:latest`-tagged form to match
   Ollama clients' expectations.
-- `hexrun ps` now actually does something: probes `GET /healthz` on
+- `npurun ps` now actually does something: probes `GET /healthz` on
   `--addr` (default `127.0.0.1:11435`) and prints the loaded model,
   uptime, auth state, and version. Optional `--auth-token` for
   servers running with bearer-token auth.
@@ -130,8 +130,8 @@ All notable changes to hexrun will be documented here. Format follows
 - `qnn-sys` and `qnn` crates are excluded from `default-members` until
   `QNN_SDK_ROOT` is set on the build host. This lets contributors check
   out the repo and run `cargo build` without having the proprietary
-  SDK. `hexrun-cli` and `hexrun-server` enable the `genie` feature on
-  `hexrun-core` to bring qnn into the build.
+  SDK. `npurun-cli` and `npurun-server` enable the `genie` feature on
+  `npurun-core` to bring qnn into the build.
 - `qnn-sys` does not declare a `links` key and does not emit
   `cargo:rustc-link-lib=dylib=QnnSystem` because QAIRT 2.45 ships only
   `QnnSystem.dll` on Windows ARM64 — no static import library. The
@@ -139,7 +139,7 @@ All notable changes to hexrun will be documented here. Format follows
   works for the LLM runtime.
 - The Phase 0 `scripts/smoke_phase0.py` and `scripts/genie-run.ps1`
   paths are kept for documentation; the canonical user-facing
-  workflow is now `hexrun pull → run → serve`.
+  workflow is now `npurun pull → run → serve`.
 
 ### Added — multi-turn chat
 
@@ -152,8 +152,8 @@ All notable changes to hexrun will be documented here. Format follows
   a full multi-turn transcript from a `[ChatMessage]` slice. Single-
   turn bundles without the new fields fall back to wrapping the most
   recent user message via `template` (preserving Phase 4 behaviour).
-- New canonical types `hexrun_core::ChatMessage` and
-  `hexrun_core::ChatRole` for crossing the HTTP-handler / engine
+- New canonical types `npurun_core::ChatMessage` and
+  `npurun_core::ChatRole` for crossing the HTTP-handler / engine
   boundary.
 - `Engine::generate_chat` and `Engine::generate_chat_streaming` accept
   a full message history. The first call on a fresh dialog is sent
@@ -174,23 +174,23 @@ All notable changes to hexrun will be documented here. Format follows
   facts established in turn 1 are answered correctly, on both
   blocking and streaming paths, on both OpenAI and Ollama surfaces.
 
-### Added — `hex-convert` (Phase 5 starter)
+### Added — `npu-convert` (Phase 5 starter)
 
-- Python sidecar at `python/hex-convert/` with three subcommands:
-  - `hex-convert manifest --model-dir <dir> --bundle-dir <bundle>
+- Python sidecar at `python/npu-convert/` with three subcommands:
+  - `npu-convert manifest --model-dir <dir> --bundle-dir <bundle>
     --name <slug>` reads the Genie bundle's `genie_config.json`,
     sniffs `arch` and `quant` from the bundle directory name (or
     accepts explicit overrides), looks up the matching chat template
     (Phi 3 / Llama 3 / Qwen 2.5 patterns ship as defaults), walks the
-    bundle for sha256 sealing, and writes a `hexrun.json`. Pure
+    bundle for sha256 sealing, and writes a `npurun.json`. Pure
     Python, ARM64-friendly. Smoke-tested against the real local
     Phi 3.5 Mini bundle — produces a manifest the Rust runtime loads
     cleanly with all 8 file sha256s captured.
-  - `hex-convert inspect <bundle-or-manifest>` pretty-prints either a
-    full hexrun manifest (with file sizes + chat template + on-by-
+  - `npu-convert inspect <bundle-or-manifest>` pretty-prints either a
+    full npurun manifest (with file sizes + chat template + on-by-
     default sha256 verification) or a raw Genie bundle (showing what
     a manifest would contain).
-  - `hex-convert export <slug> --output <dir>` orchestrates the heavy
+  - `npu-convert export <slug> --output <dir>` orchestrates the heavy
     HF -> ONNX -> AI-Hub-cloud-compile -> Genie bundle pipeline by
     shelling out to `qai-hub-models`'s per-model export script, then
     chains into `manifest`. Curated recipes for `phi-3.5-mini`,
@@ -211,13 +211,13 @@ All notable changes to hexrun will be documented here. Format follows
 
 ### Added — Phase 6 starter (release ergonomics)
 
-- **winget manifest** at `manifests/b/bpbonker/hexrun/0.1.0-rc.1/`,
+- **winget manifest** at `manifests/b/bpbonker/npurun/0.1.0-rc.1/`,
   three YAML files (version, en-US locale, installer) following the
   v1.6.0 schema. Installer type is `zip` with a portable nested
-  `hexrun.exe` and a `Commands: [hexrun]` alias, so winget can install
+  `npurun.exe` and a `Commands: [npurun]` alias, so winget can install
   the existing GitHub-release zip with no code signing required —
   validated by `winget validate`. End-users can already
-  `winget install --manifest manifests\b\bpbonker\hexrun\0.1.0-rc.1`
+  `winget install --manifest manifests\b\bpbonker\npurun\0.1.0-rc.1`
   off a clone of the repo. Public-catalog submission to
   `microsoft/winget-pkgs` is gated on a signed installer (Phase 6
   final).
@@ -228,7 +228,7 @@ All notable changes to hexrun will be documented here. Format follows
   if `MSIX_CERT_THUMBPRINT` secret is configured, opens a GitHub
   release with all four artifacts (auto-detects `-rc/-alpha/-beta`
   suffix and marks pre-release).
-- **CI matrix expanded:** `python-test` (pytest on `hex-convert`)
+- **CI matrix expanded:** `python-test` (pytest on `npu-convert`)
   and `winget-validate` (validates every published manifest dir on
   push) jobs added to `ci.yml` alongside the existing fmt/clippy/
   build/test/python-lint set.
@@ -248,7 +248,7 @@ All notable changes to hexrun will be documented here. Format follows
 
 ### Pending for v0.1.0
 - README walkthrough screenshot/recording.
-- `hex-convert` Python pipeline for HF → bundle conversion (Phase 5).
+- `npu-convert` Python pipeline for HF → bundle conversion (Phase 5).
 - Signed Windows MSIX installer + winget manifest (Phase 6).
 
 See `docs/roadmap.md` for the detailed plan.

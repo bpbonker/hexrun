@@ -76,10 +76,10 @@ jobs:
         run: |
           $v = "${{ steps.ver.outputs.version }}"
           $assets = @(
-            "dist\hexrun-$v-aarch64-windows.zip",
-            "dist\hexrun-$v-aarch64-windows.zip.sha256",
-            "dist\hexrun-$v-aarch64-windows.msix",
-            "dist\hexrun-$v-aarch64-windows.msix.sha256"
+            "dist\npurun-$v-aarch64-windows.zip",
+            "dist\npurun-$v-aarch64-windows.zip.sha256",
+            "dist\npurun-$v-aarch64-windows.msix",
+            "dist\npurun-$v-aarch64-windows.msix.sha256"
           ) | Where-Object { Test-Path $_ }
           $isPre = if ($v -match '-(rc|alpha|beta)') { "--prerelease" } else { "" }
           $title = "v$v"

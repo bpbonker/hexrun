@@ -13,7 +13,7 @@
 #
 # Usage:
 #   pwsh -File scripts\dev-cert.ps1                # generate, trust, print thumbprint
-#   pwsh -File scripts\dev-cert.ps1 -ExportPath .\dist\hexrun-dev-cert.cer
+#   pwsh -File scripts\dev-cert.ps1 -ExportPath .\dist\npurun-dev-cert.cer
 #   pwsh -File scripts\dev-cert.ps1 -List          # show existing dev certs
 #   pwsh -File scripts\dev-cert.ps1 -Remove <thumb>
 
@@ -80,7 +80,7 @@ if ($PSCmdlet.ParameterSetName -eq "Remove") {
 }
 
 # --- generate ---
-Write-Host "==  hexrun dev cert  ==" -ForegroundColor Cyan
+Write-Host "==  npurun dev cert  ==" -ForegroundColor Cyan
 Write-Host "  subject:   $Subject"
 Write-Host "  validity:  $Years year(s)"
 
@@ -99,7 +99,7 @@ $cert = New-SelfSignedCertificate `
     -Type CodeSigningCert `
     -Subject $Subject `
     -KeyUsage DigitalSignature `
-    -FriendlyName "hexrun dev signing cert" `
+    -FriendlyName "npurun dev signing cert" `
     -CertStoreLocation $store `
     -NotAfter (Get-Date).AddYears($Years) `
     -KeyAlgorithm RSA `
@@ -119,7 +119,7 @@ if (-not $NoTrust) {
     # - LocalMachine\TrustedPeople (where MSIX install pulls signer trust)
     # The latter requires admin. Try; fall back with a clear message.
     try {
-        $tmpCer = Join-Path $env:TEMP "hexrun-dev-cert-$($cert.Thumbprint).cer"
+        $tmpCer = Join-Path $env:TEMP "npurun-dev-cert-$($cert.Thumbprint).cer"
         Export-Certificate -Cert $cert -FilePath $tmpCer | Out-Null
         Import-Certificate -FilePath $tmpCer -CertStoreLocation Cert:\LocalMachine\TrustedPeople -ErrorAction Stop | Out-Null
         Remove-Item $tmpCer -Force

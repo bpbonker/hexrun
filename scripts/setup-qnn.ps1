@@ -124,7 +124,7 @@ if ([string]::IsNullOrWhiteSpace($persist)) {
 
 Write-Host ""
 if ($problems.Count -eq 0) {
-    Write-Host "All checks passed. You can now build hexrun:  cargo build --release" -ForegroundColor Green
+    Write-Host "All checks passed. You can now build npurun:  cargo build --release" -ForegroundColor Green
     exit 0
 } else {
     Write-Host ("Setup incomplete. Issues: " + ($problems -join "; ")) -ForegroundColor Red

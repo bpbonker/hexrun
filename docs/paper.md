@@ -13,7 +13,7 @@ keywords:
   - ARM64 Windows
   - Qualcomm AI Engine Direct
   - Genie runtime
-  - hexrun
+  - npurun
 status: Pre-print, technical experience report
 ---
 
@@ -41,7 +41,7 @@ weights resident in NPU shared memory during inference, while CPU
 remains at ~12% — confirming the Hexagon, not the Oryon CPU, is doing
 the work. We document twelve concrete pitfalls that defeat naive
 attempts, including an undocumented client-side cache trick that
-reduces re-export time from hours to minutes. We release `hexrun`,
+reduces re-export time from hours to minutes. We release `npurun`,
 an in-progress open-source Rust runtime built on these findings,
 intended to provide an Ollama-class developer experience for the
 NPU. To our knowledge this is the first publicly reproducible recipe
@@ -113,7 +113,7 @@ This paper makes three contributions:
    approximately 90 minutes to approximately 30 minutes by eliding
    redundant cloud uploads.
 
-3. **An open-source runtime, `hexrun`** [@hexrun-repo], scaffolded as
+3. **An open-source runtime, `npurun`** [@npurun-repo], scaffolded as
    a six-crate Rust workspace plus Python conversion sidecar.
    Phase 0 of the project (the work reported here) is verified;
    subsequent phases are described in Section 7.
@@ -198,7 +198,7 @@ shards (typically 6 shards for a 7B-parameter model on X1E) plus a
 HuggingFace `tokenizer.json`. Given a prompt string it produces
 generated text through the dialog API. This was the runtime used to
 verify Phase 0 in the present work; binding the same C API directly
-from Rust is the core of `hexrun` Phase 1.
+from Rust is the core of `npurun` Phase 1.
 
 ---
 
@@ -274,7 +274,7 @@ NPU inference on Hexagon v73
 ```
 
 The first six steps are the model preparation. The last step is the
-inference path. `hexrun` Phase 1 replaces the final `genie-t2t-run`
+inference path. `npurun` Phase 1 replaces the final `genie-t2t-run`
 shell-out with native Rust bindings to the same Genie C API.
 
 ### 4.1 Hardware target
@@ -347,7 +347,7 @@ form a third-party developer is likely to find via search.
 ships `/usr/bin/link.exe` (GNU coreutils) ahead of MSVC's linker
 on PATH. Symptom: `link: extra operand 'C:\...\rcgu.o'` from cargo.
 Fix: invoke cargo from a shell that loads `vcvarsall.bat arm64` and
-prepends `%USERPROFILE%\.cargo\bin`. The `hexrun` repo provides
+prepends `%USERPROFILE%\.cargo\bin`. The `npurun` repo provides
 `scripts/dev-shell.bat` for this.
 
 **5.2 `ring` requires clang for ARM64 assembly.** The `ring` crate
@@ -422,7 +422,7 @@ empty. **Pre-populating this YAML with all six shard model IDs from
 prior partial runs reduces re-export wall-clock time from
 approximately 90 minutes (re-uploading ~30 GB of ONNX shards) to
 approximately 30 minutes (cloud compile + link + download only).**
-We released this finding in the `hexrun` repository's troubleshooting
+We released this finding in the `npurun` repository's troubleshooting
 documentation as well as `scripts/qai-hub-status.py`, which lists
 existing uploads and jobs on a user's account.
 
@@ -538,7 +538,7 @@ and is consistent with the observed sub-second peak-to-peak
 oscillation in the Task Manager NPU graph (Section 6.2). Honest
 steady-state measurement requires keeping the bundle resident
 across queries — i.e., a long-running runtime — which is the core
-of `hexrun` Phase 1 (Section 7) and is left to future work.
+of `npurun` Phase 1 (Section 7) and is left to future work.
 
 For reference, Qualcomm's published expectation for 7B-class
 INT4-quantized models on the X1E platform is approximately 8–15
@@ -600,7 +600,7 @@ practical gating factor for whether the open ecosystem can build on
 this hardware class at all. Three classes of downstream work become
 possible:
 
-1. **Direct integration of hexrun-equivalent Genie bindings** into
+1. **Direct integration of npurun-equivalent Genie bindings** into
    existing projects (Ollama, llama.cpp, LM Studio) to provide an
    NPU code path on Snapdragon X Elite without each project
    independently re-discovering the twelve obstacles in Section 5.
@@ -633,12 +633,12 @@ should behave identically modulo TOPS rating, but we have not tested
 this. The QAIRT SDK version (2.45.0) and HTP driver version
 (30.0.219.1000) are explicit dependencies; future driver updates
 may invalidate the bundle without warning, which is the failure
-mode the cache-file (Section 5.7) and version-pinning (`hexrun`
+mode the cache-file (Section 5.7) and version-pinning (`npurun`
 manifest validation) machinery is intended to guard against.
 
 The Task Manager utilization measurement is qualitative. We did not
 instrument the QNN profiler (`QNN_LOG_LEVEL=PROFILE`) for this work;
-that is a planned `hexrun` Phase 0 follow-up. Quantitative per-op
+that is a planned `npurun` Phase 0 follow-up. Quantitative per-op
 timing breakdown between Hexagon and CPU fallback is the standard
 verification path for ruling out partial CPU offload, and we
 acknowledge it as a hole in the present evaluation. The three
@@ -651,9 +651,9 @@ ops being executed on the CPU.
 
 ---
 
-## 8. Future work: the `hexrun` runtime
+## 8. Future work: the `npurun` runtime
 
-`hexrun` [@hexrun-repo] is the open-source successor to the
+`npurun` [@npurun-repo] is the open-source successor to the
 `genie-t2t-run` shell-out used in this work. It is a Cargo workspace
 of six Rust crates plus a Python conversion sidecar, currently at
 the post-Phase-0-verification milestone. The remaining phases:
@@ -668,16 +668,16 @@ the post-Phase-0-verification milestone. The remaining phases:
   crate), top-k/top-p/temperature sampler (already implemented as a
   stand-alone module with tests), KV-cache management.
 
-- **Phase 3: Ollama-class CLI.** `hexrun pull <model>`,
-  `hexrun run <model> <prompt>`, model registry, sha256-verified
+- **Phase 3: Ollama-class CLI.** `npurun pull <model>`,
+  `npurun run <model> <prompt>`, model registry, sha256-verified
   downloads.
 
 - **Phase 4: HTTP server.** OpenAI-compatible
   `/v1/chat/completions` (with SSE streaming) plus Ollama-compatible
   `/api/tags`, allowing existing UIs (Open WebUI, etc.) to point at
-  a hexrun instance unchanged.
+  a npurun instance unchanged.
 
-- **Phase 5: `hex-convert` Python pipeline.** End-to-end HuggingFace
+- **Phase 5: `npu-convert` Python pipeline.** End-to-end HuggingFace
   → ONNX → AI Hub export → bundle creation, automating the recipe in
   Section 4. Expected to expand the model catalog beyond what
   Qualcomm has pre-built on AI Hub.
@@ -705,7 +705,7 @@ is integration knowledge rather than absent capability. We have
 verified end-to-end NPU execution of Qwen 2.5 7B Instruct on a stock
 Surface laptop, with sustained NPU utilization characteristic of
 real autoregressive decode and 4.9 GB of model weights resident in
-NPU shared memory. The accompanying `hexrun` runtime is a public
+NPU shared memory. The accompanying `npurun` runtime is a public
 artifact built on these findings and intended to provide an
 Ollama-class developer experience for the NPU on this hardware
 class. We invite reproduction, extension, and reports of any
@@ -725,7 +725,7 @@ thirteenth obstacle we missed.
 
 [@nexasdk]: Nexa AI, "NexaSDK" (2026). https://github.com/NexaAI/nexa-sdk
 
-[@hexrun-repo]: Bonker, B., "hexrun: NPU-first local LLM runtime for Snapdragon X Elite" (2026). Repository at the time of writing private; intended for public release at v0.1.0. See `docs/handoff.md` and the project plan.
+[@npurun-repo]: Bonker, B., "npurun: NPU-first local LLM runtime for Snapdragon X Elite" (2026). Repository at the time of writing private; intended for public release at v0.1.0. See `docs/handoff.md` and the project plan.
 
 [@qualcomm-qairt-sdk]: Qualcomm, "Qualcomm AI Engine Direct (QAIRT) SDK" (2025). https://www.qualcomm.com/developer/software/qualcomm-ai-engine-direct-sdk
 
@@ -755,4 +755,4 @@ the same Snapdragon X Elite laptop on which the experiments were
 performed. The reported measurements were produced live during that
 session. The commentary on related work and the structural framing
 reflects the authors' editorial decisions; the technical claims are
-backed by the working artifact in the `hexrun` repository.*
+backed by the working artifact in the `npurun` repository.*

@@ -6,13 +6,13 @@
     IgnorableNamespaces="uap rescap">
 
     <Identity
-        Name="bpbprofessional.hexrun"
+        Name="bpbonker.npurun"
         Publisher="CN=Brenden Bonker"
         Version="0.1.0.0"
         ProcessorArchitecture="arm64" />
 
     <Properties>
-        <DisplayName>hexrun</DisplayName>
+        <DisplayName>npurun</DisplayName>
         <PublisherDisplayName>Brenden Bonker</PublisherDisplayName>
         <Description>NPU-first local LLM runtime for Snapdragon X Elite. Native Rust on top of Qualcomm Genie. Ollama- and OpenAI-compatible HTTP server.</Description>
         <Logo>Assets\StoreLogo.png</Logo>
@@ -27,9 +27,9 @@
     </Resources>
 
     <Applications>
-        <Application Id="hexrun" Executable="hexrun.exe" EntryPoint="Windows.FullTrustApplication">
+        <Application Id="npurun" Executable="npurun.exe" EntryPoint="Windows.FullTrustApplication">
             <uap:VisualElements
-                DisplayName="hexrun"
+                DisplayName="npurun"
                 Description="NPU-first local LLM runtime"
                 BackgroundColor="#1F1F1F"
                 Square150x150Logo="Assets\Square150x150Logo.png"

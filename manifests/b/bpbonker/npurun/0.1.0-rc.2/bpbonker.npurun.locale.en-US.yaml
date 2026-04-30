@@ -1,0 +1,65 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.6.0.schema.json
+
+PackageIdentifier: bpbonker.npurun
+PackageVersion: 0.1.0-rc.2
+PackageLocale: en-US
+Publisher: Brenden Bonker
+PublisherUrl: https://github.com/bpbonker
+PublisherSupportUrl: https://github.com/bpbonker/npurun/issues
+PrivacyUrl: https://github.com/bpbonker/npurun/blob/main/SECURITY.md
+Author: Brenden Bonker
+PackageName: npurun
+PackageUrl: https://github.com/bpbonker/npurun
+License: MIT OR Apache-2.0
+LicenseUrl: https://github.com/bpbonker/npurun/blob/main/LICENSE-MIT
+Copyright: Copyright (c) 2026 Brenden Bonker
+CopyrightUrl: https://github.com/bpbonker/npurun/blob/main/LICENSE-MIT
+ShortDescription: NPU-first local LLM runtime for Snapdragon X Elite (Windows on ARM)
+Description: |-
+  npurun runs large language models on the Hexagon NPU built into
+  Snapdragon X Elite laptops. Native Rust on top of Qualcomm's Genie LLM
+  runtime; an Ollama-class CLI and an OpenAI/Ollama-compatible HTTP
+  server. Today the rest of the open-source LLM stack (Ollama,
+  llama.cpp, LM Studio, text-generation-webui) runs CPU-only on these
+  laptops; npurun makes the 45 TOPS NPU usable.
+
+  Phi 3.5 Mini (w4a16) sustains ~11.7 tokens/sec on the X1E NPU at
+  ~1.27 J/token, roughly 2-3x more energy-efficient per token than
+  llama.cpp on the same laptop's CPU. The OpenAI-compatible HTTP
+  server (default port 11435) works with Open WebUI and any
+  OpenAI-API client.
+
+  Requires Qualcomm's QAIRT 2.44 or 2.45 SDK installed separately
+  (the SDK is non-redistributable, so this package does not include
+  it). Download from the Qualcomm developer portal and set
+  QNN_SDK_ROOT before running. The bundled scripts/setup-qnn.ps1
+  validates the install.
+Moniker: npurun
+Tags:
+- llm
+- npu
+- snapdragon
+- snapdragon-x-elite
+- qualcomm
+- windows-on-arm
+- windows-arm64
+- rust
+- ai
+- ollama
+- openai-api
+- local-llm
+- chat
+ReleaseNotes: |-
+  First public release candidate. Verified on Snapdragon X Elite
+  (X1E80100), Windows 11 ARM64, QAIRT 2.45.
+
+  - Phi 3.5 Mini (w4a16, NPU): ~11.7 tok/s, ~194 ms TTFT, ~1.27 J/token
+  - HTTP server: OpenAI + Ollama compat, SSE/NDJSON streaming,
+    bearer-token auth, HTTP 429 backpressure, graceful shutdown
+  - Multi-turn chat via Genie KV-cache prefix matching
+
+  See the GitHub release page for full notes.
+ReleaseNotesUrl: https://github.com/bpbonker/npurun/releases/tag/v0.1.0-rc.2
+PurchaseUrl: https://buymeacoffee.com/bpbprofessional
+ManifestType: defaultLocale
+ManifestVersion: 1.6.0

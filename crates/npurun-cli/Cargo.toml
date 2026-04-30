@@ -1,0 +1,27 @@
+[package]
+name = "npurun-cli"
+description = "npurun CLI: NPU-first local LLM runtime for Snapdragon X Elite"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "npurun"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+tokio = { workspace = true }
+clap = { workspace = true }
+indicatif = { workspace = true }
+reqwest = { workspace = true }
+serde_json = { workspace = true }
+npurun-core = { path = "../npurun-core", features = ["genie"] }
+npurun-registry = { path = "../npurun-registry" }
+npurun-server = { path = "../npurun-server" }
+qnn = { path = "../qnn" }

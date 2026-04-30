@@ -3,25 +3,25 @@ resolver = "2"
 members = [
     "crates/qnn-sys",
     "crates/qnn",
-    "crates/hexrun-core",
-    "crates/hexrun-registry",
-    "crates/hexrun-server",
-    "crates/hexrun-cli",
+    "crates/npurun-core",
+    "crates/npurun-registry",
+    "crates/npurun-server",
+    "crates/npurun-cli",
 ]
 default-members = [
-    "crates/hexrun-core",
-    "crates/hexrun-registry",
-    "crates/hexrun-server",
-    "crates/hexrun-cli",
+    "crates/npurun-core",
+    "crates/npurun-registry",
+    "crates/npurun-server",
+    "crates/npurun-cli",
 ]
 
 [workspace.package]
-version = "0.1.0-dev"
+version = "0.1.0-rc.2"
 edition = "2021"
 rust-version = "1.82"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/bpbonker/hexrun"
-authors = ["Brenden Bonker", "hexrun contributors"]
+repository = "https://github.com/bpbonker/npurun"
+authors = ["Brenden Bonker", "npurun contributors"]
 
 [workspace.dependencies]
 # Core

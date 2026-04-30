@@ -40,7 +40,7 @@ $env:Path = "$QairtRoot\bin\aarch64-windows-msvc;$QairtRoot\lib\aarch64-windows-
 $env:ADSP_LIBRARY_PATH = "$QairtRoot\lib\hexagon-v73\unsigned"
 
 Write-Host ""
-Write-Host "==  hexrun Phase 0 smoke test  ==" -ForegroundColor Cyan
+Write-Host "==  npurun Phase 0 smoke test  ==" -ForegroundColor Cyan
 Write-Host "QAIRT_HOME      = $env:QAIRT_HOME"
 Write-Host "Bundle          = $Bundle"
 Write-Host "Config          = $ConfigPath"

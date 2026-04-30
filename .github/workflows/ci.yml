@@ -38,7 +38,7 @@ jobs:
         run: cargo test --workspace --exclude qnn --exclude qnn-sys
 
   python-lint:
-    name: hex-convert lint
+    name: npu-convert lint
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -48,22 +48,22 @@ jobs:
       - name: install ruff
         run: pip install ruff
       - name: ruff check
-        working-directory: python/hex-convert
+        working-directory: python/npu-convert
         run: ruff check .
 
   python-test:
-    name: hex-convert tests
+    name: npu-convert tests
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: install hex-convert + test deps
-        working-directory: python/hex-convert
+      - name: install npu-convert + test deps
+        working-directory: python/npu-convert
         run: pip install -e ".[test]"
       - name: pytest
-        working-directory: python/hex-convert
+        working-directory: python/npu-convert
         run: pytest -v
 
   winget-validate:
@@ -74,7 +74,7 @@ jobs:
       - name: validate every published manifest dir
         shell: pwsh
         run: |
-          $manifestRoot = "manifests/b/bpbonker/hexrun"
+          $manifestRoot = "manifests/b/bpbonker/npurun"
           if (-not (Test-Path $manifestRoot)) {
             Write-Host "no winget manifests yet, skipping" -ForegroundColor Yellow
             exit 0

@@ -25,11 +25,11 @@ labels: bug
 - HTP driver: <!-- "Snapdragon ... Hexagon NPU" version from Device Manager -->
 - `rustc --version`:
 - `cargo --version`:
-- hexrun commit / version:
+- npurun commit / version:
 
 ## Logs
 
-<details><summary>RUST_LOG=hexrun=debug,qnn=debug output</summary>
+<details><summary>RUST_LOG=npurun=debug,qnn=debug output</summary>
 
 ```
 <!-- paste here -->

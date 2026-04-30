@@ -16,13 +16,13 @@ You're hitting silent CPU fallback. Three things to check, in order:
    culprits: dynamic shapes, RoPE variants the EP doesn't recognize, novel
    GQA layouts.
 3. **Is the model actually quantized?** The HTP backend rejects FP32 outright.
-   `hex-convert` should refuse to emit a non-quantized model, but if you
+   `npu-convert` should refuse to emit a non-quantized model, but if you
    loaded an external ONNX, double-check.
 
 ## "SDKError(-100301) Plugin loading failed" / version mismatch
 
 This is the Nexa #1060 trap. The QNN SDK, HTP driver, and any pre-built
-plugin libs need compatible versions. `hexrun` checks the manifest's
+plugin libs need compatible versions. `npurun` checks the manifest's
 `qnn_sdk` field against the live runtime; if you see this error before the
 check fires, you're likely on a manually mixed install. Run `setup-qnn.ps1`
 and confirm the reported SDK version matches what the model was compiled
@@ -32,7 +32,7 @@ against.
 
 Two paths:
 
-- You don't have the SDK and just want to try the rest of hexrun:
+- You don't have the SDK and just want to try the rest of npurun:
   `cargo build` with the default workspace members. `qnn-sys` and `qnn`
   are excluded from `default-members`, so the build skips them.
 - You have the SDK but the build still fails: check that the SDK's
@@ -48,7 +48,7 @@ ARM64 Python wheels for ONNX quantization tooling are still missing. Use
 winget install Python.Python.3.11 --architecture x64
 py -3.11-64 -m venv .venv-x64
 .\.venv-x64\Scripts\Activate.ps1
-pip install -e python\hex-convert
+pip install -e python\npu-convert
 ```
 
 ## "link: extra operand ..." or "link.exe failed: exit code: 1" with weird args

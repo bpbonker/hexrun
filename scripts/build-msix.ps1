@@ -1,8 +1,8 @@
 # scripts/build-msix.ps1
 #
-# Build an MSIX package for hexrun on Windows ARM64.
+# Build an MSIX package for npurun on Windows ARM64.
 #
-# This produces an .msix that wraps hexrun.exe as a Win32 desktop app
+# This produces an .msix that wraps npurun.exe as a Win32 desktop app
 # (Windows.FullTrustApplication entry point, runFullTrust capability).
 # Without code-signing, the resulting .msix can only be installed by
 # users who have enabled developer mode (Settings > For developers).
@@ -78,18 +78,18 @@ $msixVersion = ($Version -replace '-.*$', '')
 if (($msixVersion.Split('.').Count) -eq 3) {
     $msixVersion += ".0"
 }
-Write-Host "==  hexrun MSIX builder  ==" -ForegroundColor Cyan
+Write-Host "==  npurun MSIX builder  ==" -ForegroundColor Cyan
 Write-Host "  semver:    $Version"
 Write-Host "  msix ver:  $msixVersion"
 
 # --- build ---
 if (-not $SkipBuild) {
     Write-Host ""
-    Write-Host "[1/5] cargo build --release -p hexrun-cli" -ForegroundColor DarkGray
-    & cmd.exe /c "scripts\dev-shell.bat cargo build --release -p hexrun-cli"
+    Write-Host "[1/5] cargo build --release -p npurun-cli" -ForegroundColor DarkGray
+    & cmd.exe /c "scripts\dev-shell.bat cargo build --release -p npurun-cli"
     if ($LASTEXITCODE -ne 0) { throw "cargo build failed (exit $LASTEXITCODE)" }
 }
-$binary = "target\release\hexrun.exe"
+$binary = "target\release\npurun.exe"
 if (-not (Test-Path $binary)) { throw "expected $binary after build, but it's not there" }
 
 # --- placeholder icons ---
@@ -104,8 +104,8 @@ if (-not (Test-Path $assetsDir)) {
 $assetSpecs = @(
     @{ Name = "StoreLogo.png";          W = 50;  H = 50;  Letter = "h" },
     @{ Name = "Square44x44Logo.png";    W = 44;  H = 44;  Letter = "h" },
-    @{ Name = "Square150x150Logo.png";  W = 150; H = 150; Letter = "hexrun" },
-    @{ Name = "Wide310x150Logo.png";    W = 310; H = 150; Letter = "hexrun" }
+    @{ Name = "Square150x150Logo.png";  W = 150; H = 150; Letter = "npurun" },
+    @{ Name = "Wide310x150Logo.png";    W = 310; H = 150; Letter = "npurun" }
 )
 Add-Type -AssemblyName System.Drawing
 foreach ($spec in $assetSpecs) {
@@ -130,7 +130,7 @@ foreach ($spec in $assetSpecs) {
 }
 
 # --- stage ---
-$stem = "hexrun-$Version-aarch64-windows"
+$stem = "npurun-$Version-aarch64-windows"
 $staging = Join-Path $OutDir "$stem-msix-staging"
 Write-Host ""
 Write-Host "[2/5] staging into $staging" -ForegroundColor DarkGray
@@ -148,7 +148,7 @@ $manifest = $manifest -creplace 'Version="[\d.]+"', "Version=`"$msixVersion`""
 $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 [System.IO.File]::WriteAllText((Join-Path (Resolve-Path $staging) "AppxManifest.xml"), $manifest, $utf8NoBom)
 
-Copy-Item $binary -Destination (Join-Path $staging "hexrun.exe")
+Copy-Item $binary -Destination (Join-Path $staging "npurun.exe")
 Copy-Item (Join-Path $assetsDir "*.png") -Destination (Join-Path $staging "Assets")
 
 # --- pack ---

@@ -1,0 +1,26 @@
+[package]
+name = "npurun-server"
+description = "OpenAI- and Ollama-compatible HTTP server for npurun"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tokio-stream = "0.1"
+axum = { workspace = true }
+tower = { workspace = true }
+tower-http = { workspace = true }
+futures = { workspace = true }
+futures-util = { workspace = true }
+bytes = { workspace = true }
+npurun-core = { path = "../npurun-core", features = ["genie"] }
+npurun-registry = { path = "../npurun-registry" }

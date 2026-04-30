@@ -1,11 +1,11 @@
-# Contributing to hexrun
+# Contributing to npurun
 
-Thanks for considering a contribution. hexrun is early-stage and most useful
+Thanks for considering a contribution. npurun is early-stage and most useful
 contributions right now are:
 
 - **Phase 0 / 1 testing on real hardware** — try the setup script on your
   Snapdragon X Elite or X Plus device and file an issue if it doesn't work.
-- **Op-coverage reports** — convert a model with `hex-convert` and tell us
+- **Op-coverage reports** — convert a model with `npu-convert` and tell us
   which ops fall back to CPU on the HTP. We track these in
   [docs/compatibility.md](docs/compatibility.md).
 - **Performance reports** — tokens/sec, first-token latency, NPU utilization
@@ -55,7 +55,7 @@ Use the "Bug report" issue template. Include:
 - QNN SDK version + HTP driver version (from `setup-qnn.ps1` output)
 - `cargo --version`, `rustc --version`
 - The smallest reproduction you can manage
-- `RUST_LOG=hexrun=debug,qnn=debug` log of the failing run, redacted as needed
+- `RUST_LOG=npurun=debug,qnn=debug` log of the failing run, redacted as needed
 
 Silent failures are the worst class of bug in this domain — please attach
 the QNN profile log if you have one (`QNN_LOG_LEVEL=PROFILE`, then

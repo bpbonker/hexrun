@@ -1,6 +1,6 @@
 # scripts/dev-shell.ps1
 #
-# Drop into a PowerShell session with everything wired up to build hexrun:
+# Drop into a PowerShell session with everything wired up to build npurun:
 # - cargo / rustc on PATH (from %USERPROFILE%\.cargo\bin)
 # - MSVC dev environment (link.exe, lib.exe, cl.exe, INCLUDE, LIB, LIBPATH)
 #   for the ARM64 host targeting ARM64

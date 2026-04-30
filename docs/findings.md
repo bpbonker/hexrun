@@ -57,7 +57,7 @@ you're inside Qualcomm or Microsoft.
 - A catalog of every papercut, with the fix.
 - A working bundle (Qwen 2.5 7B INT4 for Snapdragon X Elite) and the
   configuration files needed to run it.
-- A foundation (the in-progress hexrun project) that other tools could
+- A foundation (the in-progress npurun project) that other tools could
   build on.
 
 ---
@@ -84,11 +84,11 @@ containing:
 This bundle loads in `genie-t2t-run.exe` (ships with QAIRT) and produces
 coherent NPU-accelerated text.
 
-### 2. hexrun: the in-progress runtime
+### 2. npurun: the in-progress runtime
 
 A Cargo workspace currently at scaffold-plus-Phase-0-verification stage.
-Six crates (`qnn-sys`, `qnn`, `hexrun-core`, `hexrun-registry`,
-`hexrun-server`, `hexrun-cli`) plus a Python sidecar (`hex-convert`) for
+Six crates (`qnn-sys`, `qnn`, `npurun-core`, `npurun-registry`,
+`npurun-server`, `npurun-cli`) plus a Python sidecar (`npu-convert`) for
 HuggingFace → NPU conversion. 25/25 unit tests pass; cargo fmt/clippy/deny
 all clean. Phase 0 (the "does the NPU work at all" milestone) is verified
 on hardware.
@@ -103,12 +103,12 @@ file in the repo describes phases 1–6.
 
 ```
                     ┌─────────────────────────┐
-                    │   user: hexrun run X    │
+                    │   user: npurun run X    │
                     └────────────┬────────────┘
                                  │
                                  ▼
           ┌──────────────────────────────────────┐
-          │  hexrun (Rust, Phase 1+ in progress) │
+          │  npurun (Rust, Phase 1+ in progress) │
           │  Ollama-style CLI + OpenAI HTTP API  │
           └──────────────────────────────────────┘
                                  │
@@ -177,7 +177,7 @@ toolchain looks more confusing than it should.
 
 ## Performance
 
-**Measured on hardware, not estimated.** Phase 1 of `hexrun` (Rust
+**Measured on hardware, not estimated.** Phase 1 of `npurun` (Rust
 bindings to libGenie) lets us load the bundle once and run multiple
 queries against the same in-memory dialog, which is what we needed for
 honest steady-state numbers. See `docs/benchmarks.md` for full data.
@@ -205,7 +205,7 @@ honest steady-state numbers. See `docs/benchmarks.md` for full data.
 | llama.cpp on Oryon CPU (Qwen 7B Q4 GGUF) | ~3-5 tok/s | Faster than us per-token at this size |
 | llama.cpp on Oryon CPU (Phi 3.5 Q4) | ~5-8 tok/s | Slower than our Phi NPU number |
 
-The picture: **for ~4B-class models, hexrun on the NPU now beats CPU
+The picture: **for ~4B-class models, npurun on the NPU now beats CPU
 paths.** For 7B and above on this generation of silicon, CPU paths are
 still faster. The X1E NPU memory ceiling and 6-shard split appear to
 make 7B genuinely difficult to run efficiently.
@@ -380,7 +380,7 @@ winget install Python.Python.3.11 --architecture x64
 ### Get the model bundle (about 90 min for a 7B; ~30 of that is just clock time on Qualcomm's cloud compile)
 
 ```bat
-:: From inside a clone of hexrun:
+:: From inside a clone of npurun:
 py -3.11-64 -m venv python\.venv-x64
 call python\.venv-x64\Scripts\activate.bat
 
@@ -412,14 +412,14 @@ tokenizer. Add them (the tokenizer is from HuggingFace, ungated for Qwen):
 curl -fsSLo tokenizer.json https://huggingface.co/Qwen/Qwen2.5-7B-Instruct/resolve/main/tokenizer.json
 
 :: Drop the genie_config.json and htp_backend_ext_config.json from
-:: hexrun/scripts/sample-configs/qwen2_5_7b_instruct/  (versioned in the repo)
+:: npurun/scripts/sample-configs/qwen2_5_7b_instruct/  (versioned in the repo)
 :: into the bundle directory.
 ```
 
 ### Run it
 
 ```powershell
-pwsh -File hexrun\scripts\genie-run.ps1 -Prompt "Tell me a one-line joke."
+pwsh -File npurun\scripts\genie-run.ps1 -Prompt "Tell me a one-line joke."
 ```
 
 ### Verify it's actually using the NPU
@@ -470,7 +470,7 @@ After measuring, the contribution looks like this:
 - The runtime is not faster than CPU OSS routes (Ollama, llama.cpp) on
   the same model size. Until the configuration is properly tuned —
   `cpu-mask`, `n-threads`, possibly a different shard split — recommending
-  hexrun for raw throughput is dishonest.
+  npurun for raw throughput is dishonest.
 - Energy efficiency is theoretically better but we have not measured it.
 - Phi 3.5 Mini (3.8B) likely runs ~2× faster but we haven't bench'd it.
 
@@ -508,7 +508,7 @@ We promise to publish whatever we find, including null results.
 
 - **Steady-state generation rate measurement** — every `genie-t2t-run.exe`
   invocation cold-loads 4.6 GB. We've not yet kept the model resident
-  across queries to measure per-token speed honestly. Phase 1 of hexrun
+  across queries to measure per-token speed honestly. Phase 1 of npurun
   binds the Genie API directly so this becomes possible.
 - **Context length > 4096 tokens** — hardware-bound on the X1E80100.
   Will require either Snapdragon X2 hardware or recompiling models with
@@ -517,8 +517,8 @@ We promise to publish whatever we find, including null results.
   memory at this size. Larger models exceed the 7.8 GB ceiling.
 - **A clean OSS path that doesn't depend on Qualcomm's cloud** — the
   AI Hub upload-then-cloud-compile dance is mandatory today. The closest
-  any open project gets to bypassing it is `hex-convert` (Phase 5 of
-  hexrun) which would *attempt* local quantization-and-compile. That's
+  any open project gets to bypassing it is `npu-convert` (Phase 5 of
+  npurun) which would *attempt* local quantization-and-compile. That's
   large work and requires Qualcomm to release more of their toolchain.
 - **Other model architectures** — only LLM (Qwen, Llama, Phi, etc.) is
   in the AI Hub catalog with NPU pre-builds. Vision and audio model
@@ -540,7 +540,7 @@ We promise to publish whatever we find, including null results.
 | Microsoft Foundry Local | ⚠️ Distilled DeepSeek only | Preview |
 | NexaSDK | ✅ NPU | Closed CLI, not Rust-friendly |
 | AnythingLLM / Fooocus | ⚠️ Claim NPU, broken in practice | Issues #3194, #3042 |
-| **This work (hexrun + manual recipe)** | ✅ NPU | Fully reproducible from open tools + Qualcomm dev account |
+| **This work (npurun + manual recipe)** | ✅ NPU | Fully reproducible from open tools + Qualcomm dev account |
 
 We are not aware of another public open-source recipe that takes Qwen 2.5
 7B from HuggingFace through to verified NPU execution on Snapdragon X
@@ -558,17 +558,17 @@ done this we'd love to hear from them — happy to credit.
   there.
 - **The ai-hub-apps tutorial** for the Genie config templates we adapted.
 - **The `ort`, `tokenizers`, `axum`, `clap`, `bindgen`, `libloading`,
-  `tracing` Rust crates** for the foundation hexrun is built on.
+  `tracing` Rust crates** for the foundation npurun is built on.
 
 ---
 
 ## Where this goes next
 
-The hexrun project is the long-term home of this work. Phase 0 (this
+The npurun project is the long-term home of this work. Phase 0 (this
 finding) is verified. Phase 1 binds Genie/QNN in Rust so the runtime
 keeps the model loaded across queries. Phase 2 wires up the LLM
 generation loop; Phase 3 the CLI; Phase 4 an OpenAI/Ollama-compatible
-HTTP server; Phase 5 the converter pipeline (`hex-convert`); Phase 6
+HTTP server; Phase 5 the converter pipeline (`npu-convert`); Phase 6
 release prep.
 
 The end goal is Ollama for the NPU on Windows ARM. The plan and

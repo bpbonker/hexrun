@@ -1,7 +1,7 @@
 # scripts/energy-bench.ps1
 #
 # Measures NPU inference energy by sampling battery DischargeRate
-# (milliwatts) before, during, and after a `hexrun bench` run.
+# (milliwatts) before, during, and after a `npurun bench` run.
 #
 # Output: idle power baseline, busy power average, delta watts attributable
 # to inference, energy-per-token in joules.
@@ -9,8 +9,8 @@
 # Requirements:
 #   - Laptop must be on battery (unplugged) — DischargeRate is only valid
 #     when discharging. The script bails if BatteryStatus reports plugged in.
-#   - hexrun.exe in target/release (build first).
-#   - HEXRUN_MODELS_DIR set or %LOCALAPPDATA%\hexrun\models populated.
+#   - npurun.exe in target/release (build first).
+#   - NPURUN_MODELS_DIR set or %LOCALAPPDATA%\npurun\models populated.
 #
 # Usage:
 #   pwsh -File scripts\energy-bench.ps1 -Model phi-3.5-mini
@@ -21,19 +21,19 @@ param(
     [string]$Model = "phi-3.5-mini",
     [int]$BaselineSeconds = 30,
     [int]$SampleIntervalMs = 500,
-    [string]$Hexrun = (Join-Path (Get-Location) "target\release\hexrun.exe"),
-    [string]$ModelsDir = $env:HEXRUN_MODELS_DIR
+    [string]$Npurun = (Join-Path (Get-Location) "target\release\npurun.exe"),
+    [string]$ModelsDir = $env:NPURUN_MODELS_DIR
 )
 
 if (-not [string]::IsNullOrEmpty($ModelsDir)) {
-    $env:HEXRUN_MODELS_DIR = $ModelsDir
-    Write-Host "  HEXRUN_MODELS_DIR set to $ModelsDir"
-} elseif ([string]::IsNullOrEmpty($env:HEXRUN_MODELS_DIR)) {
+    $env:NPURUN_MODELS_DIR = $ModelsDir
+    Write-Host "  NPURUN_MODELS_DIR set to $ModelsDir"
+} elseif ([string]::IsNullOrEmpty($env:NPURUN_MODELS_DIR)) {
     # Fall back to the well-known dev location.
     $candidate = "C:\AAA\Personal\AI\models"
     if (Test-Path $candidate) {
-        $env:HEXRUN_MODELS_DIR = $candidate
-        Write-Host "  HEXRUN_MODELS_DIR auto-set to $candidate"
+        $env:NPURUN_MODELS_DIR = $candidate
+        Write-Host "  NPURUN_MODELS_DIR auto-set to $candidate"
     }
 }
 
@@ -63,12 +63,12 @@ function Mean($collection) {
     return ($collection | Measure-Object -Average).Average
 }
 
-if (-not (Test-Path $Hexrun)) {
-    throw "hexrun binary not found at $Hexrun. Build first: cargo build --release -p hexrun-cli"
+if (-not (Test-Path $Npurun)) {
+    throw "npurun binary not found at $Npurun. Build first: cargo build --release -p npurun-cli"
 }
 
 # Make Genie.dll, QnnHtp.dll and the Hexagon stubs reachable at process
-# startup. Without this the spawned hexrun.exe fails with STATUS_DLL_NOT_FOUND
+# startup. Without this the spawned npurun.exe fails with STATUS_DLL_NOT_FOUND
 # before main runs.
 if ($env:QNN_SDK_ROOT) {
     $bin = Join-Path $env:QNN_SDK_ROOT "bin\aarch64-windows-msvc"
@@ -81,10 +81,10 @@ if ($env:QNN_SDK_ROOT) {
         }
         Write-Host "  QAIRT paths added to PATH and ADSP_LIBRARY_PATH"
     } else {
-        Write-Warning "QNN_SDK_ROOT is set but expected subdirs not found; hexrun may fail to load DLLs."
+        Write-Warning "QNN_SDK_ROOT is set but expected subdirs not found; npurun may fail to load DLLs."
     }
 } else {
-    Write-Warning "QNN_SDK_ROOT is not set; hexrun.exe will likely fail at startup with a DLL load error."
+    Write-Warning "QNN_SDK_ROOT is not set; npurun.exe will likely fail at startup with a DLL load error."
 }
 
 $initial = Get-DischargeRateMilliwatts
@@ -93,8 +93,8 @@ if ($null -eq $initial) {
 }
 
 Write-Host ""
-Write-Host "==  hexrun energy benchmark  ==" -ForegroundColor Cyan
-Write-Host "  hexrun:        $Hexrun"
+Write-Host "==  npurun energy benchmark  ==" -ForegroundColor Cyan
+Write-Host "  npurun:        $Npurun"
 Write-Host "  model:         $Model"
 Write-Host "  baseline:      $BaselineSeconds seconds"
 Write-Host "  sample rate:   every $SampleIntervalMs ms"
@@ -106,11 +106,11 @@ $idle = Read-PowerSamples $BaselineSeconds $SampleIntervalMs
 $idle_mean_mw = Mean $idle
 Write-Host ("       idle mean: {0:N0} mW ({1:N2} W) over {2} samples" -f $idle_mean_mw, ($idle_mean_mw / 1000), $idle.Count)
 
-# --- run hexrun bench in a background process and sample while it runs ---
+# --- run npurun bench in a background process and sample while it runs ---
 Write-Host ""
-Write-Host "[2/3] starting hexrun bench and sampling power..." -ForegroundColor DarkGray
+Write-Host "[2/3] starting npurun bench and sampling power..." -ForegroundColor DarkGray
 $benchArgs = @("bench", $Model, "--repeats", "2")
-$proc = Start-Process -FilePath $Hexrun -ArgumentList $benchArgs -PassThru -RedirectStandardOutput ".\.energy-bench-stdout.log" -RedirectStandardError ".\.energy-bench-stderr.log" -WindowStyle Hidden
+$proc = Start-Process -FilePath $Npurun -ArgumentList $benchArgs -PassThru -RedirectStandardOutput ".\.energy-bench-stdout.log" -RedirectStandardError ".\.energy-bench-stderr.log" -WindowStyle Hidden
 
 # Sample until the process exits.
 $busy = [System.Collections.Generic.List[double]]::new()
@@ -127,7 +127,7 @@ Write-Host ("       busy mean: {0:N0} mW ({1:N2} W) over {2} samples ({3:N1} s)"
 # Give Windows a beat to flush the redirected stdout buffer before we read it.
 Start-Sleep -Milliseconds 800
 
-# --- compute delta + parse hexrun bench stdout for token totals ---
+# --- compute delta + parse npurun bench stdout for token totals ---
 $delta_w = ($busy_mean_mw - $idle_mean_mw) / 1000.0
 $inference_energy_j = $delta_w * $elapsed
 
@@ -158,7 +158,7 @@ if ($null -ne $tokens_total -and $tokens_total -gt 0) {
     Write-Host ("  approx tokens generated:        {0,8}" -f $tokens_total)
     Write-Host ("  joules per token (delta):       {0,8:N2} J/token" -f $j_per_token)
     if ($null -ne $tps_post) {
-        Write-Host ("  hexrun aggregate tok/s:         {0,8:N1} tok/s (post ttft)" -f $tps_post)
+        Write-Host ("  npurun aggregate tok/s:         {0,8:N1} tok/s (post ttft)" -f $tps_post)
     }
 } else {
     Write-Host "  (could not parse token count from bench stdout; inspect .energy-bench-stdout.log)"

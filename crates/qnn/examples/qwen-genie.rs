@@ -41,7 +41,7 @@ fn main() -> anyhow::Result<()> {
         prompt
     };
 
-    let bundle = env::var("HEXRUN_BUNDLE").unwrap_or_else(|_| DEFAULT_BUNDLE.to_string());
+    let bundle = env::var("NPURUN_BUNDLE").unwrap_or_else(|_| DEFAULT_BUNDLE.to_string());
     let bundle = PathBuf::from(bundle);
     let config = bundle.join("genie_config.json");
 

@@ -44,7 +44,7 @@ fn main() -> anyhow::Result<()> {
         )
         .init();
 
-    let bundle = env::var("HEXRUN_BUNDLE").unwrap_or_else(|_| DEFAULT_BUNDLE.to_string());
+    let bundle = env::var("NPURUN_BUNDLE").unwrap_or_else(|_| DEFAULT_BUNDLE.to_string());
     let bundle = PathBuf::from(bundle);
     let config = bundle.join("genie_config.json");
 
@@ -52,7 +52,7 @@ fn main() -> anyhow::Result<()> {
         .map_err(|_| anyhow::anyhow!("QNN_SDK_ROOT not set; run inside scripts\\dev-shell.bat"))?;
     setup_qairt_environment(&qairt)?;
 
-    println!("==  hexrun warm-query benchmark: Phi 3.5 Mini  ==");
+    println!("==  npurun warm-query benchmark: Phi 3.5 Mini  ==");
     println!("bundle: {}", bundle.display());
     println!();
 

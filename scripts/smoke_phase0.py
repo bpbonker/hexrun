@@ -62,7 +62,7 @@ def main() -> int:
         _eprint(f"missing dependency: {e}. Try: pip install onnxruntime-genai onnxruntime-qnn")
         return 2
 
-    print(f"hexrun smoke test  ep={args.ep}  model={args.model}")
+    print(f"npurun smoke test  ep={args.ep}  model={args.model}")
 
     config = og.Config(str(args.model))
     if args.ep == "qnn":

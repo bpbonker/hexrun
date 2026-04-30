@@ -1,6 +1,6 @@
 # Architecture
 
-This document captures the load-bearing decisions behind hexrun. It tracks
+This document captures the load-bearing decisions behind npurun. It tracks
 the [plan](../../../Users/Brenden/.claude/plans/there-currently-exists-no-parallel-sparrow.md)
 but lives here so contributors can find it.
 
@@ -8,7 +8,7 @@ but lives here so contributors can find it.
 
 ```
                      ┌──────────────────────┐
-                     │     hexrun-core      │
+                     │     npurun-core      │
                      │   Engine::generate    │
                      │  (tokenizer, sampler, │
                      │   KV cache, loop)     │
@@ -54,11 +54,11 @@ to the CLI.
 ## Why a single process
 
 Ollama uses a daemon model — separate `ollama serve` + `ollama run`. Reasonable
-choice but heavier on Windows (service registration, IPC). For v1, hexrun is
-a single binary; `hexrun serve` just holds the engine in-process while the
+choice but heavier on Windows (service registration, IPC). For v1, npurun is
+a single binary; `npurun serve` just holds the engine in-process while the
 HTTP server runs.
 
-If we need a daemon later, the boundary is clean: `hexrun-core::Engine` is
+If we need a daemon later, the boundary is clean: `npurun-core::Engine` is
 already `Send + Sync` and behind an `Arc`.
 
 ## Streaming

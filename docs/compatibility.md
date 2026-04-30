@@ -1,6 +1,6 @@
 # Model compatibility matrix
 
-Tracks which HuggingFace LLMs we've successfully converted with `hex-convert`
+Tracks which HuggingFace LLMs we've successfully converted with `npu-convert`
 and how they behave on the Hexagon NPU. Filed via the
 [Model compatibility report](../.github/ISSUE_TEMPLATE/model_compatibility.md)
 issue template; promoted here once verified.

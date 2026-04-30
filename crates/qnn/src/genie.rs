@@ -196,7 +196,7 @@ impl Drop for Config {
 /// A Genie dialog: a loaded LLM ready to answer queries.
 ///
 /// Construct via [`Dialog::from_config_file`] (most common; reads the
-/// `genie_config.json` from a hexrun model bundle directory) or
+/// `genie_config.json` from a npurun model bundle directory) or
 /// [`Dialog::from_config_json`] (raw JSON string).
 ///
 /// The dialog holds the entire compiled context-binary set in NPU shared

@@ -1,4 +1,4 @@
-# hexrun — handoff context
+# npurun — handoff context
 
 **Last updated:** 2026-04-30, after Wave A–C drops.
 **Status:** Phases 0–4 plus pull integrity, LAN safety, and server backpressure all shipped. Working tool with `pull → run → serve` user flow, OpenAI/Ollama-compatible HTTP, sha256-verified resumable downloads, bearer auth, CORS, graceful shutdown, and HTTP 429 backpressure. See `docs/roadmap.md` for what remains for v0.1.0.
@@ -20,11 +20,11 @@ what's next" if you're picking up the project mid-stream. Pair it with:
 
 ---
 
-## What hexrun is
+## What npurun is
 
 An NPU-first local LLM runtime for Snapdragon X Elite (Windows on ARM).
 Today, Ollama / llama.cpp / LM Studio all run CPU-only on these laptops; the
-Hexagon NPU (45 TOPS) sits idle. hexrun fixes that with native Rust bindings
+Hexagon NPU (45 TOPS) sits idle. npurun fixes that with native Rust bindings
 to libGenie/QNN, an Ollama-class CLI (`pull`/`list`/`show`/`run`/`bench`/`rm`/`serve`),
 and an OpenAI- and Ollama-compatible HTTP server.
 
@@ -42,7 +42,7 @@ End-to-end on this laptop:
 - HTTP server (OpenAI + Ollama compat) verified end-to-end with SSE
   streaming, NDJSON streaming, bearer auth (200/401/200 ladder), CORS
   preflight, HTTP 429 on concurrent requests, rich `/healthz`.
-- `hexrun pull phi-3.5-mini` downloads ~2 GB, sha256-verifies, extracts,
+- `npurun pull phi-3.5-mini` downloads ~2 GB, sha256-verifies, extracts,
   auto-writes manifest. Resumable via HTTP `Range`.
 
 All three NPU-usage proofs agreed:
@@ -91,7 +91,7 @@ those packages.
 ## Repository layout
 
 ```
-C:\AAA\Personal\AI\hexrun\
+C:\AAA\Personal\AI\npurun\
 ├── Cargo.toml                       # workspace manifest
 ├── rust-toolchain.toml              # pins stable + ARM64 target
 ├── rustfmt.toml, clippy.toml, deny.toml, .editorconfig
@@ -108,13 +108,13 @@ C:\AAA\Personal\AI\hexrun\
 │   │   ├── build.rs                 # graceful no-op when QNN_SDK_ROOT unset
 │   │   └── src/lib.rs               # include!(bindings.rs)
 │   ├── qnn/                         # safe wrapper (shell only — Phase 1 work)
-│   ├── hexrun-core/                 # engine, manifest, sampler
+│   ├── npurun-core/                 # engine, manifest, sampler
 │   │   └── src/{lib,engine,manifest,sampler}.rs
-│   ├── hexrun-registry/             # model pull/list/cache
-│   ├── hexrun-server/               # axum HTTP server (OpenAI + Ollama compat)
-│   └── hexrun-cli/                  # `hexrun` binary (clap)
+│   ├── npurun-registry/             # model pull/list/cache
+│   ├── npurun-server/               # axum HTTP server (OpenAI + Ollama compat)
+│   └── npurun-cli/                  # `npurun` binary (clap)
 ├── python/
-│   ├── hex-convert/                 # x64-Python conversion sidecar (Phase 5)
+│   ├── npu-convert/                 # x64-Python conversion sidecar (Phase 5)
 │   ├── .venv-x64/                   # x64 venv with qai-hub-models  (gitignored)
 │   └── .venv-qaihub/                # earlier ARM64 venv attempt   (gitignored)
 ├── scripts/
@@ -197,7 +197,7 @@ python -X utf8 -m qai_hub_models.models.qwen2_5_7b_instruct.export ^
     --model-cache-mode enable --synchronous
 ```
 
-### Run hexrun (the CLI we're building)
+### Run npurun (the CLI we're building)
 
 ```bat
 scripts\dev-shell.bat cargo run --release -- --help
@@ -305,13 +305,13 @@ Listed in priority order:
    problem. Definition of done: `cargo test` loads a context binary and
    runs a forward pass on the NPU, output bit-matches `genie-t2t-run.exe`.
 
-4. **Phase 2: `hexrun-core` real inference loop.** Wraps Genie's C API
+4. **Phase 2: `npurun-core` real inference loop.** Wraps Genie's C API
    (since the AI Hub LLM toolchain only emits Genie bundles) instead of
    ORT. Tokenizer + sampler + KV cache loop, Qwen 2.5 7B hardcoded.
    Definition of done: `cargo run --example qwen` streams coherent tokens
    from NPU at ≥5 tok/s steady-state, NPU column shows >0% sustained.
 
-5. **Phase 3+:** CLI fleshed out, HTTP server made real, hex-convert pipeline,
+5. **Phase 3+:** CLI fleshed out, HTTP server made real, npu-convert pipeline,
    release prep. See plan file for details.
 
 ---
@@ -327,11 +327,11 @@ priorities flip:
 - **Phase 1+ inference path:** Genie via libloading. The `qnn-sys` crate
   still exposes raw QNN bindings for low-level work and non-LLM models;
   the LLM path goes through Genie.
-- **Phase 5 (`hex-convert`):** still useful for non-LLM models or for taking
+- **Phase 5 (`npu-convert`):** still useful for non-LLM models or for taking
   control of the conversion pipeline ourselves rather than relying on AI Hub.
 
 This pivot is reflected in the project memory file
-`~/.claude/projects/c--AAA-Personal-AI/memory/project_hexrun.md`.
+`~/.claude/projects/c--AAA-Personal-AI/memory/project_npurun.md`.
 
 ---
 
@@ -364,7 +364,7 @@ handoff was written.
 
 - **Plan:** `C:\Users\Brenden\.claude\plans\there-currently-exists-no-parallel-sparrow.md`
 - **Memory index:** `C:\Users\Brenden\.claude\projects\c--AAA-Personal-AI\memory\MEMORY.md`
-- **Project memory:** `…\memory\project_hexrun.md` (Phase 0 status snapshot)
+- **Project memory:** `…\memory\project_npurun.md` (Phase 0 status snapshot)
 - **Feedback memory:** `…\memory\feedback_robustness.md`, `feedback_plain_language.md`
 - **Reference:** `…\memory\reference_npu_ecosystem.md` (snapshot of NPU ecosystem April 2026)
 

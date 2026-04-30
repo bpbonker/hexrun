@@ -1,0 +1,29 @@
+[package]
+name = "npurun-core"
+description = "Inference engine core: tokenizer, sampler, KV cache, generation loop"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+ort = { workspace = true }
+tokenizers = { workspace = true }
+ndarray = { workspace = true }
+half = { workspace = true }
+qnn = { path = "../qnn", optional = true }
+
+[features]
+default = []
+# Enable the Genie (LLM-on-NPU) backend. Off by default so CI can build
+# the workspace without QNN_SDK_ROOT being set (qnn-sys/qnn require it).
+# npurun-cli and npurun-server enable this transitively.
+genie = ["dep:qnn"]

@@ -1,8 +1,8 @@
 # installer/
 
-MSIX packaging assets for `hexrun`.
+MSIX packaging assets for `npurun`.
 
-- `AppxManifest.xml` — package manifest. Wraps `hexrun.exe` as a Win32
+- `AppxManifest.xml` — package manifest. Wraps `npurun.exe` as a Win32
   desktop application via `Windows.FullTrustApplication` +
   `runFullTrust`. Update the `Version` line on each release.
 - `Assets/` — generated on first run of `scripts\build-msix.ps1` if

@@ -1,6 +1,6 @@
 ---
 name: Feature request
-about: Propose a new capability for hexrun
+about: Propose a new capability for npurun
 title: "[feat] "
 labels: enhancement
 ---

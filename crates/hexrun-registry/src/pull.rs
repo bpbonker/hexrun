@@ -282,7 +282,7 @@ fn write_manifest(
     let manifest_path = model_dir.join("hexrun.json");
     let serialized = serde_json::to_string_pretty(&manifest).map_err(|e| RegistryError::Io {
         path: manifest_path.clone(),
-        source: std::io::Error::new(std::io::ErrorKind::Other, e),
+        source: std::io::Error::other(e),
     })?;
     std::fs::write(&manifest_path, serialized).map_err(|e| RegistryError::Io {
         path: manifest_path.clone(),

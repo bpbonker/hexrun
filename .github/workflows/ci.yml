@@ -10,7 +10,7 @@ jobs:
     name: fmt + clippy (no QNN SDK)
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
@@ -23,7 +23,7 @@ jobs:
     name: build (default-members, x64 host, no SDK)
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
       - name: cargo build
         run: cargo build --workspace --exclude qnn --exclude qnn-sys
@@ -32,7 +32,7 @@ jobs:
     name: test (default-members)
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
       - name: cargo test
         run: cargo test --workspace --exclude qnn --exclude qnn-sys
@@ -41,7 +41,7 @@ jobs:
     name: npu-convert lint
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -55,7 +55,7 @@ jobs:
     name: npu-convert tests
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -70,7 +70,7 @@ jobs:
     name: winget manifest validate
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: validate every published manifest dir
         shell: pwsh
         run: |
@@ -98,7 +98,7 @@ jobs:
     runs-on: [self-hosted, Windows, ARM64]
     if: false # enable once self-hosted runner is configured
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-pc-windows-msvc

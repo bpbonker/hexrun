@@ -1,5 +1,11 @@
 # Model compatibility matrix
 
+> npurun targets Snapdragon X-series Windows-on-ARM laptops broadly
+> (X Elite, X Plus, and forward — anything with a Hexagon NPU and QAIRT
+> support). The numbers in this table were measured on X Elite (X1E80100)
+> specifically because that is what we have in hand. Other X SKUs and
+> the X2 generation should work but are unverified.
+
 Tracks which HuggingFace LLMs we've successfully converted with `npu-convert`
 and how they behave on the Hexagon NPU. Filed via the
 [Model compatibility report](https://github.com/bpbonker/npurun/blob/main/.github/ISSUE_TEMPLATE/model_compatibility.md)

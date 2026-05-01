@@ -14,14 +14,15 @@ License: MIT OR Apache-2.0
 LicenseUrl: https://github.com/bpbonker/npurun/blob/main/LICENSE-MIT
 Copyright: Copyright (c) 2026 Brenden Bonker
 CopyrightUrl: https://github.com/bpbonker/npurun/blob/main/LICENSE-MIT
-ShortDescription: NPU-first local LLM runtime for Snapdragon X Elite (Windows on ARM)
+ShortDescription: NPU-first local LLM runtime for Snapdragon X-series Windows-on-ARM laptops
 Description: |-
   npurun runs large language models on the Hexagon NPU built into
-  Snapdragon X Elite laptops. Native Rust on top of Qualcomm's Genie LLM
-  runtime; an Ollama-class CLI and an OpenAI/Ollama-compatible HTTP
-  server. Today the rest of the open-source LLM stack (Ollama,
-  llama.cpp, LM Studio, text-generation-webui) runs CPU-only on these
-  laptops; npurun makes the 45 TOPS NPU usable.
+  Snapdragon X-series laptops (X Elite, X Plus, and forward). Native
+  Rust on top of Qualcomm's Genie LLM runtime; an Ollama-class CLI and
+  an OpenAI/Ollama-compatible HTTP server. Today the rest of the
+  open-source LLM stack (Ollama, llama.cpp, LM Studio,
+  text-generation-webui) runs CPU-only on these laptops; npurun makes
+  the 45 TOPS NPU usable.
 
   Phi 3.5 Mini (w4a16) sustains ~11.7 tokens/sec on the X1E NPU at
   ~1.27 J/token, roughly 2-3x more energy-efficient per token than

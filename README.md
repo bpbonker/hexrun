@@ -1,9 +1,9 @@
 # npurun
 
-**NPU-first local LLM runtime for Snapdragon X Elite (Windows on ARM).**
+**NPU-first local LLM runtime for Snapdragon X-series Windows-on-ARM laptops.**
 
 Today, popular open-source LLM tools (Ollama, llama.cpp, LM Studio,
-text-generation-webui) run CPU-only on Snapdragon X Elite laptops — the
+text-generation-webui) run CPU-only on Snapdragon X laptops. The
 45 TOPS Hexagon NPU sits idle. npurun fixes that. Native Rust runtime
 on top of Qualcomm's Genie SDK, an Ollama-class CLI, and an
 OpenAI/Ollama-compatible HTTP server. Verified on hardware.
@@ -55,7 +55,7 @@ full operational state.
 
 ## Why this exists
 
-| Tool | NPU support on Snapdragon X Elite (Apr 2026) |
+| Tool | NPU support on Snapdragon X-series (Apr 2026) |
 |---|---|
 | Ollama | CPU only ([#5360](https://github.com/ollama/ollama/issues/5360)) |
 | llama.cpp | QNN backend stalled ([#8273](https://github.com/ggml-org/llama.cpp/discussions/8273)) |
@@ -86,7 +86,7 @@ regime is currently slower than CPU on this generation of silicon — see
 
 | Requirement | Why | How |
 |---|---|---|
-| Snapdragon X Elite or X Plus laptop | Hexagon NPU is the whole point | — |
+| Snapdragon X-series laptop (X Elite, X Plus, or X2 — anything with a Hexagon NPU and QAIRT support) | Hexagon NPU is the whole point | — |
 | Windows 11 24H2+ on ARM64 | Required for current HTP driver and QAIRT 2.44+ | — |
 | Rust stable + `aarch64-pc-windows-msvc` target | builds the runtime | `winget install Rustlang.Rustup` then `rustup target add aarch64-pc-windows-msvc` |
 | MSVC v143 ARM64/ARM64EC build tools + Win11 SDK 26100 | linker/toolchain | Visual Studio Installer → Modify VS 2022 → Individual Components |

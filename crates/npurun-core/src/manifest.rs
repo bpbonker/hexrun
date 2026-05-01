@@ -24,7 +24,7 @@ pub enum Quant {
     #[serde(rename = "int8-w-int16-a")]
     Int8WInt16A,
     /// 4-bit weights with 16-bit activations (Qualcomm's standard for
-    /// pre-built Snapdragon X Elite LLM bundles).
+    /// pre-built Snapdragon X-series LLM bundles).
     #[serde(rename = "w4a16")]
     W4A16,
     /// 8-bit weights with 16-bit activations.
@@ -611,9 +611,18 @@ mod tests {
     fn wrap_chat_multi_turn() {
         let t = multi_turn_template();
         let msgs = vec![
-            ChatMessage { role: ChatRole::User, content: "u1".into() },
-            ChatMessage { role: ChatRole::Assistant, content: "a1".into() },
-            ChatMessage { role: ChatRole::User, content: "u2".into() },
+            ChatMessage {
+                role: ChatRole::User,
+                content: "u1".into(),
+            },
+            ChatMessage {
+                role: ChatRole::Assistant,
+                content: "a1".into(),
+            },
+            ChatMessage {
+                role: ChatRole::User,
+                content: "u2".into(),
+            },
         ];
         assert_eq!(
             t.wrap_chat(&msgs).unwrap(),
@@ -625,8 +634,14 @@ mod tests {
     fn wrap_chat_explicit_system_overrides_default() {
         let t = multi_turn_template();
         let msgs = vec![
-            ChatMessage { role: ChatRole::System, content: "be terse".into() },
-            ChatMessage { role: ChatRole::User, content: "hi".into() },
+            ChatMessage {
+                role: ChatRole::System,
+                content: "be terse".into(),
+            },
+            ChatMessage {
+                role: ChatRole::User,
+                content: "hi".into(),
+            },
         ];
         assert_eq!(t.wrap_chat(&msgs).unwrap(), "[S]be terse[U]hi[A]");
     }
@@ -643,9 +658,18 @@ mod tests {
             next_user_turn: None,
         };
         let msgs = vec![
-            ChatMessage { role: ChatRole::User, content: "u1".into() },
-            ChatMessage { role: ChatRole::Assistant, content: "a1".into() },
-            ChatMessage { role: ChatRole::User, content: "u2".into() },
+            ChatMessage {
+                role: ChatRole::User,
+                content: "u1".into(),
+            },
+            ChatMessage {
+                role: ChatRole::Assistant,
+                content: "a1".into(),
+            },
+            ChatMessage {
+                role: ChatRole::User,
+                content: "u2".into(),
+            },
         ];
         assert_eq!(t.wrap_chat(&msgs).unwrap(), "[S]sys[U]u2[A]");
     }

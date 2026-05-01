@@ -1,6 +1,6 @@
 [package]
 name = "npurun-cli"
-description = "npurun CLI: NPU-first local LLM runtime for Snapdragon X Elite"
+description = "npurun CLI: NPU-first local LLM runtime for Snapdragon X-series Windows-on-ARM laptops"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -21,6 +21,7 @@ clap = { workspace = true }
 indicatif = { workspace = true }
 reqwest = { workspace = true }
 serde_json = { workspace = true }
+futures-util = { workspace = true }
 npurun-core = { path = "../npurun-core", features = ["genie"] }
 npurun-registry = { path = "../npurun-registry" }
 npurun-server = { path = "../npurun-server" }

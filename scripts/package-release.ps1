@@ -95,8 +95,8 @@ $installMd = @"
 
 ## What this is
 
-A standalone build of ``npurun.exe`` for Snapdragon X Elite Windows on
-ARM64. NPU-first local LLM runtime — see ``README.md`` for the full
+A standalone build of ``npurun.exe`` for Snapdragon X-series Windows on
+ARM64. NPU-first local LLM runtime; see ``README.md`` for the full
 project description.
 
 ## What you still need

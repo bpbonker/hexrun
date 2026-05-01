@@ -13,10 +13,15 @@
 - [Release runbook](release.md)
 - [Roadmap](roadmap.md)
 
+# Integrations
+
+- [AnythingLLM](integrations/anythingllm.md)
+
 # Internals
 
 - [Architecture](architecture.md)
 - [Findings](findings.md)
+- [ORT-QNN vs libGenie probe](findings_ort_vs_genie.md)
 - [Paper](paper.md)
 - [Repo hygiene](repo_hygiene.md)
 - [Specula follow-ups](specula_followups.md)

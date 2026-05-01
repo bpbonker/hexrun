@@ -80,10 +80,7 @@ struct ShowRequest {
     model: Option<String>,
 }
 
-async fn api_show(
-    State(state): State<ServerState>,
-    Json(req): Json<ShowRequest>,
-) -> Response {
+async fn api_show(State(state): State<ServerState>, Json(req): Json<ShowRequest>) -> Response {
     let requested = match req.name.or(req.model) {
         Some(n) => n,
         None => {
@@ -186,10 +183,7 @@ struct DeleteRequest {
     model: Option<String>,
 }
 
-async fn api_delete(
-    State(state): State<ServerState>,
-    Json(req): Json<DeleteRequest>,
-) -> Response {
+async fn api_delete(State(state): State<ServerState>, Json(req): Json<DeleteRequest>) -> Response {
     let requested = match req.name.or(req.model) {
         Some(n) => n,
         None => {
@@ -221,7 +215,11 @@ async fn api_delete(
     match npurun_registry::remove_local(&bare) {
         Ok(removed) => {
             info!(name = %bare, path = %removed.display(), "ollama /api/delete");
-            (StatusCode::OK, Json(serde_json::json!({"status": "deleted"}))).into_response()
+            (
+                StatusCode::OK,
+                Json(serde_json::json!({"status": "deleted"})),
+            )
+                .into_response()
         }
         Err(npurun_registry::RegistryError::Io { source, .. })
             if source.kind() == std::io::ErrorKind::NotFound =>
@@ -639,6 +637,12 @@ fn epoch_days_to_ymd(days: i64) -> (i32, u32, u32) {
     (year as i32, m, d)
 }
 
+enum StreamItem {
+    Content(String),
+    Done,
+    Error(String),
+}
+
 #[cfg(test)]
 mod date_tests {
     use super::epoch_days_to_ymd;
@@ -671,10 +675,4 @@ mod date_tests {
         assert_eq!(epoch_days_to_ymd(47_540), (2100, 2, 28));
         assert_eq!(epoch_days_to_ymd(47_541), (2100, 3, 1));
     }
-}
-
-enum StreamItem {
-    Content(String),
-    Done,
-    Error(String),
 }

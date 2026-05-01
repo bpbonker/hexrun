@@ -20,11 +20,13 @@ what's next" if you're picking up the project mid-stream. Pair it with:
 
 ## What npurun is
 
-An NPU-first local LLM runtime for Snapdragon X Elite (Windows on ARM).
-Today, Ollama / llama.cpp / LM Studio all run CPU-only on these laptops; the
-Hexagon NPU (45 TOPS) sits idle. npurun fixes that with native Rust bindings
-to libGenie/QNN, an Ollama-class CLI (`pull`/`list`/`show`/`run`/`bench`/`rm`/`serve`),
-and an OpenAI- and Ollama-compatible HTTP server.
+An NPU-first local LLM runtime for Snapdragon X-series Windows-on-ARM
+laptops (verified on X Elite, intended to run on X Plus and X2 too).
+Today, Ollama / llama.cpp / LM Studio all run CPU-only on these laptops;
+the Hexagon NPU (45 TOPS) sits idle. npurun fixes that with native Rust
+bindings to libGenie/QNN, an Ollama-class CLI
+(`pull`/`list`/`show`/`run`/`bench`/`rm`/`serve`), and an OpenAI- and
+Ollama-compatible HTTP server.
 
 ---
 

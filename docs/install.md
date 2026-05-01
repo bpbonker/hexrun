@@ -1,7 +1,8 @@
 # Installation
 
-Three install paths, fastest first. All require a Snapdragon X Elite (or X
-Plus) laptop running Windows 11 24H2+ on ARM64 — npurun is NPU-first and
+Three install paths, fastest first. All require a Snapdragon X-series
+laptop (X Elite, X Plus, or X2 — anything with a Hexagon NPU and QAIRT
+support) running Windows 11 24H2+ on ARM64. npurun is NPU-first and
 won't run on x64 silicon.
 
 ## 1. MSIX installer (recommended)

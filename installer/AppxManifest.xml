@@ -14,7 +14,7 @@
     <Properties>
         <DisplayName>npurun</DisplayName>
         <PublisherDisplayName>Brenden Bonker</PublisherDisplayName>
-        <Description>NPU-first local LLM runtime for Snapdragon X Elite. Native Rust on top of Qualcomm Genie. Ollama- and OpenAI-compatible HTTP server.</Description>
+        <Description>NPU-first local LLM runtime for Snapdragon X-series Windows-on-ARM laptops. Native Rust on top of Qualcomm Genie. Ollama- and OpenAI-compatible HTTP server.</Description>
         <Logo>Assets\StoreLogo.png</Logo>
     </Properties>
 

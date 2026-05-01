@@ -60,7 +60,7 @@ Pretty-prints the manifest of a cached bundle: arch, quant, context
 length, file count, sha256s, chat template. `--profile` adds runtime info
 where available.
 
-### `npurun run <model> "<prompt>"`
+### `npurun run <model> "<prompt>" [--addr HOST:PORT] [--auth-token TOK]`
 
 One-shot generation. Streams tokens to stdout as Genie produces them;
 timing summary (TTFT, total, post-TTFT tok/s) goes to stderr so you can
@@ -75,7 +75,35 @@ Uses the bundle's chat template automatically. For multi-turn
 conversation, use `npurun serve` and the chat-completions API — `run` is
 deliberately one-shot.
 
-### `npurun bench <model> [--prompt P] [--repeats N] [--no-skip-first]`
+#### Skipping cold-load with `--addr`
+
+Cold-loading the bundle takes 9–11 seconds on Phi 3.5 Mini. If you
+already have a `npurun serve` running, pass `--addr <host:port>` to
+dispatch the prompt to it via `/v1/chat/completions`. The reply
+streams to stdout the same way; the iteration loop drops to under a
+second.
+
+```powershell
+# Shell A: keep one warm engine resident
+npurun serve --model phi-3.5-mini
+
+# Shell B: iterate without paying cold-load each time
+npurun run --addr 127.0.0.1:11435 phi-3.5-mini "first prompt"
+npurun run --addr 127.0.0.1:11435 phi-3.5-mini "second prompt"
+```
+
+`--addr` is also picked up from the `NPURUN_SERVE_ADDR` environment
+variable, so you can set it once per shell and drop the flag.
+
+`--auth-token <TOKEN>` mirrors `npurun serve --auth-token` for
+LAN-deployed servers. The client validates `/healthz` before
+dispatching: if the server has a different model loaded than the one
+you asked for, `run` errors instead of letting the server silently
+serve whatever it has resident. If the server is busy (HTTP 429), the
+client errors immediately rather than retrying — that defeats the
+point of bypassing cold-load.
+
+### `npurun bench <model> [--prompt P] [--repeats N] [--no-skip-first] [--ctx N] [--csv PATH]`
 
 Warm-query benchmark. Runs four built-in prompts (or one you supply via
 `--prompt`) `--repeats` times each, prints per-prompt and per-repeat
@@ -91,6 +119,46 @@ npurun bench phi-3.5-mini --prompt "hello" --repeats 5
 Numbers in the README's *Performance, honestly* table came from this
 exact harness. See [`benchmarks.md`](benchmarks.md) for raw runs.
 
+#### Pinning the context tier with `--ctx`
+
+Genie bundles ship multiple compiled context tiers in the same on-disk
+artifact (`cl512`, `cl1024`, `cl2048`, `cl3072`, `cl4096` on the Phi 3.5
+Mini bundle, for example). `--ctx` pins the tier for the run; smaller
+tiers run faster because the KV cache is smaller. Useful for charting
+the speed/context curve.
+
+```powershell
+npurun bench phi-3.5-mini --ctx 1024
+npurun bench phi-3.5-mini --ctx 4096
+```
+
+If the requested value is not one of the bundle's compiled tiers,
+`bench` errors with the available list:
+
+```text
+Error: context tier 999 not available in this bundle; available tiers: 512, 1024, 2048, 3072, 4096
+```
+
+#### Per-query CSV with `--csv`
+
+Append one row per (prompt, repeat) to a CSV. Header columns:
+
+```text
+model,prompt,repeat,ctx,ttft_ms,total_ms,gen_ms,tokens,tps_post_ttft
+```
+
+The header is written once when the file is created; subsequent runs
+append. Combined with `--ctx`, this is the workflow for tracking
+per-tier regressions:
+
+```powershell
+npurun bench phi-3.5-mini --ctx 1024 --csv .\phi-1024.csv
+npurun bench phi-3.5-mini --ctx 4096 --csv .\phi-4096.csv
+```
+
+`--csv` errors fast if the parent directory does not exist, rather than
+panicking at write time.
+
 ### `npurun version`
 
 Three lines: npurun semver, libGenie version (from the linked Genie.lib),
@@ -101,6 +169,36 @@ npurun       0.1.0-rc.2
 libGenie     1.17.0
 QAIRT SDK    2.45.0  (C:\AAA\Personal\AI\qairt\2.45.0)
 ```
+
+### `npurun show-hardware`
+
+Probes the local NPU stack and reports SoC, the Qualcomm Hexagon NPU
+PnP entry, the Hexagon architectures the installed QAIRT SDK ships
+support for, and the QAIRT + libGenie versions.
+
+```text
+PS> npurun show-hardware
+SoC:              Snapdragon(R) X 12-core X1E80100 @ 3.40 GHz
+NPU:              Snapdragon(R) X Elite - X1E80100 - Qualcomm(R) Hexagon(TM) NPU
+Hexagon arch:     hexagon-v66, hexagon-v68, hexagon-v69, hexagon-v73, hexagon-v75, hexagon-v79, hexagon-v81
+QAIRT SDK:        2.45.0  (C:\AAA\Personal\AI\qairt\2.45.0)
+libGenie:         1.17.0
+
+Status:           Genie API loaded; npurun does not gate on SoC strings.
+```
+
+Unlike runtimes that hardcode SoC marketing strings (e.g. AnythingLLM's
+QNN engine, see [issues #2962][allm-2962] and [#5129][allm-5129] where
+it refuses to start on X Plus / X 10-core variants), npurun does not
+match against `Snapdragon(R) X Elite` or any other name. If `libGenie`
+loads on your hardware, npurun will try to run a model on it. Failures
+surface as real `Genie::Status` errors, not pre-flight rejections.
+
+Use this command in bug reports when filing
+[`Compatibility`](compatibility.md) entries or NPU-loading issues.
+
+[allm-2962]: https://github.com/Mintplex-Labs/anything-llm/issues/2962
+[allm-5129]: https://github.com/Mintplex-Labs/anything-llm/issues/5129
 
 ### `npurun rm <model>`
 
@@ -196,6 +294,10 @@ ollama list   # talks to npurun, not to Ollama
 
 When `--auth-token` is set, supply it as the `OPENAI_API_KEY` (or
 `Authorization: Bearer …` header) in your client.
+
+For AnythingLLM specifically — including why you should use the
+Generic OpenAI provider rather than its bundled QNN engine — see
+[`integrations/anythingllm.md`](integrations/anythingllm.md).
 
 ## Verifying the NPU is actually doing the work
 

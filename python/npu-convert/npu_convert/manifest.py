@@ -1,7 +1,8 @@
 """Emit a npurun.json manifest from a Genie bundle directory.
 
 A Genie bundle is the on-disk artifact that Qualcomm AI Hub produces when
-you compile an LLM for Snapdragon X Elite — typically a directory containing:
+you compile an LLM for Snapdragon X-series silicon. Typically a directory
+containing:
 
 - ``genie_config.json``
 - One or more compiled context-binary shards (``*.bin``)

@@ -182,5 +182,5 @@ the `qnn` and `qnn-sys` crates are excluded from the cloud builds.
 
 Self-hosted CI (`build-arm64-with-qnn` in `ci.yml`,
 `build-and-release` in `release.yml`): both gated `if: false`.
-Enable once a Snapdragon X Elite laptop is enrolled as a self-hosted
+Enable once a Snapdragon X-series laptop is enrolled as a self-hosted
 runner with `QNN_SDK_ROOT` set as a secret.

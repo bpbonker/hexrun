@@ -4,7 +4,8 @@ Thanks for considering a contribution. npurun is early-stage and most useful
 contributions right now are:
 
 - **Phase 0 / 1 testing on real hardware** — try the setup script on your
-  Snapdragon X Elite or X Plus device and file an issue if it doesn't work.
+  Snapdragon X-series device (X Elite, X Plus, X2 — anything with a
+  Hexagon NPU and QAIRT support) and file an issue if it doesn't work.
 - **Op-coverage reports** — convert a model with `npu-convert` and tell us
   which ops fall back to CPU on the HTP. We track these in
   [docs/compatibility.md](docs/compatibility.md).

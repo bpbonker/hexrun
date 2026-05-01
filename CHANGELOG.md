@@ -319,6 +319,141 @@ Against the rebuilt rc.2 binary on Snapdragon X Elite NPU:
   Verified live against a running server: `modified_at` now reports
   `2026-04-30T21:53:32Z` instead of `1970-01-01T21:41:58Z`.
 
+### Added — specula catch-up follow-ups (2026-05-01)
+
+Four small wins from the briefing in `docs/specula_followups.md`, picked
+up as one drop. Briefing references their respective items.
+
+#### Architecture: documented the no-concurrency-knob decision (Item 3)
+
+`docs/architecture.md` now has a "Why one permit instead of N" section
+explaining that the single-permit semaphore in `npurun serve` is the
+load-bearing consequence of libGenie owning a single in-place dialog
+handle, not a placeholder waiting to be lifted. Cites specula's
+session-22 finding ("NPU absent (Genie has no concurrency knob)") as
+external corroboration.
+
+#### Docs: generation-portability sweep (Item 4)
+
+Softened "Snapdragon X Elite" capability statements across the README,
+`book.toml`, MSIX/winget metadata, install.md, index.md, handoff.md,
+release.md, roadmap.md, compatibility.md, CONTRIBUTING.md, the
+`npurun-cli` clap `about` and Cargo.toml descriptions, and crate-level
+doc comments. The framing is now "Snapdragon X-series Windows-on-ARM
+laptops" for capability surfaces; X1E stays in the load-bearing
+measurement, verification, and Qualcomm-AI-Hub-device-name spots
+(benchmarks, energy figures, `Snapdragon X Elite CRD` compile flag,
+hardware verification rows, `paper.md` / `findings.md` historical
+reports). `compatibility.md` gained a top-of-file note that the table's
+numbers were measured on X Elite and that the project targets the
+X-series broadly.
+
+#### `npurun bench --ctx <N>` and `--csv <PATH>` (Item 1)
+
+`npurun bench` now accepts:
+
+- `--ctx <N>` to pin the Genie context tier for a run. Validated
+  against the bundle's compiled `clNNNN` tiers (parsed from `ctx-bins`
+  filenames in `genie_config.json`); errors with the available list if
+  the requested value isn't compiled in. The override is threaded
+  through `EngineConfig.ctx`, applied by patching
+  `dialog.context.size` in the loaded JSON, and consumed via a new
+  `qnn::Dialog::from_config_json_in_dir` constructor. The bench
+  header now shows the resolved (overridden) ctx.
+- `--csv <PATH>` to append one row per (prompt, repeat) with columns
+  `model,prompt,repeat,ctx,ttft_ms,total_ms,gen_ms,tokens,tps_post_ttft`.
+  Header is written once on file creation; subsequent runs append.
+  Errors fast if the parent directory is missing rather than
+  panicking on `File::create`.
+
+Smoke-test on cached Phi 3.5 Mini bundle:
+`npurun bench phi-3.5-mini --ctx 1024 --csv phi-1024.csv --prompt "hi"
+--repeats 2` produced a header + two data rows; a second run against
+the same path appended cleanly without re-emitting the header. `--ctx
+999` errored with `available tiers: 512, 1024, 2048, 3072, 4096`.
+
+Specula corroboration: their per-ctx scaling tables on Qwen3-4B are
+the same shape; this is what the new `--csv` output is built to
+support across npurun versions.
+
+#### `npurun run --addr <host:port>` (Item 2)
+
+`npurun run` now accepts `--addr <host:port>` (also picked up from the
+`NPURUN_SERVE_ADDR` environment variable) and `--auth-token <TOK>`.
+When `--addr` is set, the prompt is POSTed to a running `npurun
+serve`'s `/v1/chat/completions` with `stream: true`, and the
+incoming SSE chunks are streamed to stdout as they arrive. Skips the
+9–11 s bundle cold-load (~2 s end-to-end on Phi 3.5 Mini in the
+smoke test, vs ~10 s cold).
+
+Pre-flight via `/healthz`: if the server has a different model loaded
+than the one the user asked for, `run --addr` errors with the
+mismatch and a hint to either restart serve, point at the right
+server, or drop `--addr` to load locally. HTTP 429 from a busy server
+is surfaced as a clean error rather than retried (retrying would
+defeat the point of bypassing cold-load). `<name>:latest` references
+are stripped before comparison.
+
+Specula corroboration: their session-21 measurement showed amortizing
+HTP context init via a sidecar process gave +51% on AR1 workloads.
+`npurun serve` already gives that to HTTP clients; this closes the gap
+for the iterative `npurun run` UX too.
+
+### Investigated — ORT-QNN vs libGenie probe (2026-05-01)
+
+Microbenchmark of per-stage QNN HTP execution latency on
+[`llmware/phi-3.5-onnx-qnn`](https://huggingface.co/llmware/phi-3.5-onnx-qnn)
+vs the libGenie path npurun ships, on this X1E80100. Driver:
+`scripts/bench-ort-qnn-microbench.py` against `onnxruntime-qnn` 2.1.0
+(plugin EP via `add_provider_for_devices`). Full writeup in
+`docs/findings_ort_vs_genie.md`.
+
+**Result:** ORT-QNN summed across the 4 ar128 prefill shards (~250 ms)
+and 4 ar1 decode shards (~149 ms) runs roughly **2× slower** than
+libGenie's reported full-pipeline TTFT (~110 ms) and per-token decode
+(~80 ms) on this hardware. The +19% TG / +39% PP lift specula
+[reported on Qwen3-4B/X2](https://github.com/hotschmoe/specula) does
+**not** transfer to Phi-3.5-mini/X1E in this microbenchmark
+configuration.
+
+The full-pipeline equivalent was blocked: PyPI / ORT-Nightly
+`onnxruntime-genai` wheels (stable `0.13.1`, nightly
+`0.13.0.dev20260402`) are not compiled with `--use_qnn`. Source-built
+QNN-enabled ort-genai wheels would change the picture; the unfinished
+`scripts/bench-ort-qnn.py` is parked for that path. See
+`docs/findings_ort_vs_genie.md` for caveats and reproduction.
+
+Implication for `Backend::Ort` (currently `EngineError::FeatureDisabled`
+in `npurun-core`): don't budget the port expecting a free perf lift
+on X1E. Re-test on X2 silicon when available before committing.
+
+### Added — `npurun show-hardware` (2026-05-01)
+
+New CLI subcommand that probes and prints the local NPU stack:
+SoC marketing name (via `Get-CimInstance Win32_Processor`), the
+Qualcomm Hexagon NPU PnP entry (`Get-PnpDevice`), the Hexagon
+architectures the installed QAIRT SDK ships support for (walking
+`<QNN_SDK_ROOT>/lib/hexagon-vNN/`), and the QAIRT + libGenie
+versions. Does **not** gate on SoC strings — the differentiator
+versus AnythingLLM's QNN engine, which refuses to start on X Plus /
+X 10-core variants (issues #2962, #5129). If libGenie loads, npurun
+runs.
+
+Use this in bug reports and Compatibility entries.
+
+Implementation: `crates/npurun-cli/src/main.rs::show_hardware` and
+helper probes (`detect_soc`, `detect_npu_pnp`, `detect_hexagon_arch`).
+Filesystem-based unit tests for `detect_hexagon_arch` cover the
+present and missing-layout paths.
+
+### Added — AnythingLLM-as-client integration recipe (2026-05-01)
+
+`docs/integrations/anythingllm.md`: configure AnythingLLM's Generic
+OpenAI provider against a running `npurun serve` to bypass
+AnythingLLM's hardcoded SoC string check while keeping its workspace
+UI, document RAG, and agents. Wired into `docs/SUMMARY.md` under a
+new "Integrations" section. Cross-linked from `docs/usage.md`.
+
 ### Pending for v0.1.0
 - README walkthrough screenshot/recording.
 - `npu-convert` Python pipeline for HF → bundle conversion (Phase 5).

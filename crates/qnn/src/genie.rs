@@ -271,14 +271,23 @@ impl Dialog {
             path: path.to_path_buf(),
             source: e,
         })?;
+        Self::from_config_json_in_dir(&json, parent)
+    }
 
+    /// Create a dialog from a JSON string while resolving relative paths
+    /// against `parent`.
+    ///
+    /// Same chdir-and-restore dance as [`Self::from_config_file`], but
+    /// for callers that have already loaded the JSON and (typically)
+    /// patched it in memory before handing it to Genie.
+    pub fn from_config_json_in_dir(json: &str, parent: &Path) -> Result<Self, GenieError> {
         let prev_cwd = std::env::current_dir().ok();
         std::env::set_current_dir(parent).map_err(|e| GenieError::Io {
             path: parent.to_path_buf(),
             source: e,
         })?;
         debug!(cwd = %parent.display(), "chdir for Genie config relative paths");
-        let result = Self::from_config_json(&json);
+        let result = Self::from_config_json(json);
         if let Some(prev) = prev_cwd {
             // Best-effort restore. If it fails the process is in an odd
             // state but the dialog was either created successfully or not.

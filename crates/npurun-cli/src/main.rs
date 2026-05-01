@@ -12,7 +12,7 @@ use npurun_core::{Engine, EngineConfig};
 #[derive(Parser)]
 #[command(
     name = "npurun",
-    about = "NPU-first local LLM runtime for Snapdragon X Elite",
+    about = "NPU-first local LLM runtime for Snapdragon X-series Windows-on-ARM laptops",
     version
 )]
 struct Cli {
@@ -36,16 +36,33 @@ enum Cmd {
         #[arg(long)]
         profile: bool,
     },
-    /// Run a one-shot generation against a locally cached model
+    /// Run a one-shot generation. By default cold-loads the bundle into
+    /// this process; pass `--addr <host:port>` to dispatch the prompt to
+    /// a running `npurun serve` instead, skipping the 9–11 s bundle load.
     Run {
         /// Model name (e.g. "phi-3.5-mini") or absolute path to a model directory
         model: String,
         /// Prompt text. If multiple words, quote them or pass as trailing args.
         #[arg(trailing_var_arg = true)]
         prompt: Vec<String>,
+        /// host:port of a running `npurun serve` to dispatch the prompt
+        /// to. When set, `run` POSTs to `/v1/chat/completions` and
+        /// streams the reply, skipping the local bundle load.
+        /// Falls back to the env var `NPURUN_SERVE_ADDR` if unset.
+        #[arg(long, value_name = "ADDR", env = "NPURUN_SERVE_ADDR")]
+        addr: Option<String>,
+        /// Bearer token, if `--addr` points at a server started with
+        /// `--auth-token`.
+        #[arg(long, value_name = "TOKEN")]
+        auth_token: Option<String>,
     },
     /// Print versions of npurun, libGenie, and the QAIRT SDK in a single shot
     Version,
+    /// Probe and report the local NPU hardware: SoC name, Hexagon architecture,
+    /// Qualcomm AI Engine PnP device, QAIRT SDK + libGenie versions. Does not
+    /// gate on SoC strings — npurun runs anywhere libGenie loads, including
+    /// X Plus and X 10-core variants that other NPU runtimes refuse.
+    ShowHardware,
     /// Probe a running `npurun serve` and report what model it has loaded.
     /// Connects to GET /healthz on `--addr` (default 127.0.0.1:11435).
     Ps {
@@ -71,6 +88,20 @@ enum Cmd {
         /// Defaults to true; pass --no-skip-first to include it.
         #[arg(long, default_value_t = true)]
         skip_first: bool,
+        /// Pin the Genie context tier for this run (one of the bundle's
+        /// compiled `clNNNN` values, e.g. 512, 1024, 2048, 4096 for
+        /// Phi 3.5 Mini). Errors with the available tier list if the
+        /// requested value isn't compiled in. When omitted, the bundle's
+        /// manifest-declared context is used.
+        #[arg(long, value_name = "N")]
+        ctx: Option<u32>,
+        /// Append one row per (prompt, repeat) to a CSV at this path.
+        /// Header columns:
+        /// `model,prompt,repeat,ctx,ttft_ms,total_ms,gen_ms,tokens,tps_post_ttft`.
+        /// The header is written once when the file is created;
+        /// subsequent runs append.
+        #[arg(long, value_name = "PATH")]
+        csv: Option<PathBuf>,
     },
     /// Start the OpenAI- and Ollama-compatible HTTP server. The named model
     /// is loaded on startup and stays resident in NPU shared memory for
@@ -121,17 +152,35 @@ async fn main() -> Result<()> {
         Cmd::List => list_models()?,
         Cmd::Rm { model } => remove_model(&model)?,
         Cmd::Show { model, profile } => show_model(&model, profile)?,
-        Cmd::Run { model, prompt } => {
+        Cmd::Run {
+            model,
+            prompt,
+            addr,
+            auth_token,
+        } => {
             let prompt = prompt.join(" ");
-            run_model(&model, &prompt)?
+            match addr {
+                Some(addr) => run_remote(&addr, &model, &prompt, auth_token.as_deref()).await?,
+                None => run_model(&model, &prompt)?,
+            }
         }
         Cmd::Version => print_versions()?,
+        Cmd::ShowHardware => show_hardware()?,
         Cmd::Bench {
             model,
             prompt,
             repeats,
             skip_first,
-        } => bench_model(&model, prompt.as_deref(), repeats, skip_first)?,
+            ctx,
+            csv,
+        } => bench_model(
+            &model,
+            prompt.as_deref(),
+            repeats,
+            skip_first,
+            ctx,
+            csv.as_deref(),
+        )?,
         Cmd::Ps { addr, auth_token } => probe_ps(&addr, auth_token.as_deref()).await?,
         Cmd::Serve {
             model,
@@ -447,7 +496,9 @@ async fn probe_ps(addr: &str, auth_token: Option<&str>) -> Result<()> {
     let bytes = match resp.bytes().await {
         Ok(b) => b,
         Err(e) => {
-            println!("npurun serve at {addr} responded {status} but the body could not be read ({e})");
+            println!(
+                "npurun serve at {addr} responded {status} but the body could not be read ({e})"
+            );
             return Ok(());
         }
     };
@@ -466,14 +517,8 @@ async fn probe_ps(addr: &str, auth_token: Option<&str>) -> Result<()> {
         .get("uptime_seconds")
         .and_then(|v| v.as_u64())
         .unwrap_or(0);
-    let auth_on = body
-        .get("auth")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
-    let version = body
-        .get("version")
-        .and_then(|v| v.as_str())
-        .unwrap_or("?");
+    let auth_on = body.get("auth").and_then(|v| v.as_bool()).unwrap_or(false);
+    let version = body.get("version").and_then(|v| v.as_str()).unwrap_or("?");
     let server_status = body
         .get("status")
         .and_then(|v| v.as_str())
@@ -482,7 +527,10 @@ async fn probe_ps(addr: &str, auth_token: Option<&str>) -> Result<()> {
     println!("  status:    {server_status}");
     println!("  model:     {model}");
     println!("  uptime:    {}", format_uptime(uptime));
-    println!("  auth:      {}", if auth_on { "bearer-token" } else { "none" });
+    println!(
+        "  auth:      {}",
+        if auth_on { "bearer-token" } else { "none" }
+    );
     println!("  version:   {version}");
     Ok(())
 }
@@ -526,6 +574,132 @@ fn print_versions() -> Result<()> {
     Ok(())
 }
 
+/// Inspect and report the local NPU hardware setup.
+///
+/// Reads SoC name from `Win32_Processor`, looks for a Qualcomm Hexagon
+/// NPU under `Get-PnpDevice`, infers the supported Hexagon architecture
+/// from the QAIRT SDK directory layout (`lib/hexagon-vNN/`), and pairs
+/// these with the QAIRT SDK + libGenie versions already shown by
+/// [`print_versions`].
+///
+/// Reports facts; does not gate on them. The differentiation is exactly
+/// this: AnythingLLM's QNN engine string-matches `Snapdragon(R) X Elite`
+/// and refuses to start on X Plus / X 10-core machines (their issues
+/// #2962 and #5129). npurun calls libGenie regardless and lets the SDK
+/// either succeed or report a real failure mode.
+fn show_hardware() -> Result<()> {
+    let soc =
+        detect_soc().unwrap_or_else(|| "(unknown — Win32_Processor probe failed)".to_string());
+    let npu = detect_npu_pnp().unwrap_or_else(|| "(none reported by Get-PnpDevice)".to_string());
+    let qairt_root = env::var("QNN_SDK_ROOT").ok();
+    let hexagon_arch = qairt_root
+        .as_ref()
+        .and_then(|r| detect_hexagon_arch(Path::new(r)))
+        .unwrap_or_else(|| "(QAIRT SDK layout unrecognised)".to_string());
+
+    let qairt_version = qairt_root.as_ref().and_then(|root| {
+        let sdk_yaml = Path::new(root).join("sdk.yaml");
+        std::fs::read_to_string(&sdk_yaml).ok().and_then(|text| {
+            text.lines().find_map(|line| {
+                line.trim()
+                    .strip_prefix("version:")
+                    .map(|rest| rest.trim().to_string())
+            })
+        })
+    });
+    let v = qnn::api_version();
+
+    println!("SoC:              {soc}");
+    println!("NPU:              {npu}");
+    println!("Hexagon arch:     {hexagon_arch}");
+    match (qairt_version, qairt_root.as_ref()) {
+        (Some(ver), Some(root)) => println!("QAIRT SDK:        {ver}  ({root})"),
+        (None, Some(root)) => println!("QAIRT SDK:        (sdk.yaml not parseable; root: {root})"),
+        _ => println!("QAIRT SDK:        (QNN_SDK_ROOT not set)"),
+    }
+    println!("libGenie:         {}.{}.{}", v.major, v.minor, v.patch);
+    println!();
+    println!("Status:           Genie API loaded; npurun does not gate on SoC strings.");
+    println!("                  If a model fails to load on this hardware, that is a");
+    println!("                  real failure and worth filing as an issue with this");
+    println!("                  output attached.");
+    Ok(())
+}
+
+/// Probe `Win32_Processor` via PowerShell for the SoC marketing name.
+/// Returns `None` if PowerShell or the WMI query fails — we don't
+/// install a hard dependency on this for `show_hardware` to be useful.
+fn detect_soc() -> Option<String> {
+    let out = std::process::Command::new("powershell")
+        .args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            "(Get-CimInstance Win32_Processor | Select-Object -First 1 -ExpandProperty Name).Trim()",
+        ])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if s.is_empty() {
+        None
+    } else {
+        Some(s)
+    }
+}
+
+/// Probe `Get-PnpDevice` for a Qualcomm Hexagon NPU. The friendly name
+/// varies across SoC families ("Qualcomm AI Engine", "NPU Compute
+/// Accelerator Device", etc.), so we filter by manufacturer + class
+/// instead of name-matching.
+fn detect_npu_pnp() -> Option<String> {
+    let out = std::process::Command::new("powershell")
+        .args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            "Get-PnpDevice -Status OK | Where-Object { $_.Manufacturer -match 'Qualcomm' -and ($_.Class -eq 'Compute' -or $_.FriendlyName -match 'NPU|Hexagon|AI Engine') } | Select-Object -First 1 -ExpandProperty FriendlyName",
+        ])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if s.is_empty() {
+        None
+    } else {
+        Some(s)
+    }
+}
+
+/// Walk `<QAIRT>/lib/` looking for a `hexagon-vNN/` directory. The SDK
+/// ships exactly one such directory per supported HTP architecture
+/// (`hexagon-v73` for QAIRT 2.45 → X1E / X Plus / X 10-core; later SDKs
+/// add `v75` / `v79` for X2-class silicon).
+fn detect_hexagon_arch(qairt_root: &Path) -> Option<String> {
+    let lib_dir = qairt_root.join("lib");
+    let entries = std::fs::read_dir(&lib_dir).ok()?;
+    let mut found: Vec<String> = Vec::new();
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if let Some(rest) = name.strip_prefix("hexagon-v") {
+            if rest.chars().all(|c| c.is_ascii_digit()) && !rest.is_empty() {
+                found.push(format!("hexagon-v{rest}"));
+            }
+        }
+    }
+    found.sort();
+    if found.is_empty() {
+        None
+    } else {
+        Some(found.join(", "))
+    }
+}
+
 const BENCH_PROMPTS: &[&str] = &[
     "Write a one-line joke about Snapdragon laptops.",
     "Briefly explain why an NPU is more energy-efficient than a CPU for matrix multiplication.",
@@ -543,23 +717,45 @@ fn bench_model(
     custom_prompt: Option<&str>,
     repeats: usize,
     skip_first: bool,
+    ctx: Option<u32>,
+    csv_path: Option<&Path>,
 ) -> Result<()> {
     let dir = resolve_model_dir(model)?;
+    if let Some(requested) = ctx {
+        let tiers = Engine::available_ctx_tiers(&dir);
+        if !tiers.is_empty() && !tiers.contains(&requested) {
+            return Err(anyhow!(
+                "context tier {requested} not available in this bundle; available tiers: {}",
+                tiers
+                    .iter()
+                    .map(|t| t.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
+        }
+    }
     let cfg = EngineConfig {
         model_dir: dir,
+        ctx,
         ..Default::default()
     };
     let load_started = Instant::now();
     let engine = Engine::load(cfg)?;
     let load_elapsed = load_started.elapsed();
+    let resolved_ctx = ctx.unwrap_or(engine.manifest().context);
     eprintln!(
         "==  npurun bench: {} ({}, {:?}, ctx {})  ==",
         engine.manifest().name,
         engine.manifest().arch,
         engine.manifest().quant,
-        engine.manifest().context,
+        resolved_ctx,
     );
     eprintln!("[bundle loaded in {load_elapsed:.2?}]");
+
+    let mut csv_writer = match csv_path {
+        Some(path) => Some(open_bench_csv(path)?),
+        None => None,
+    };
 
     let prompts: Vec<&str> = match custom_prompt {
         Some(p) => vec![p],
@@ -568,9 +764,10 @@ fn bench_model(
     let total_runs = prompts.len() * repeats.max(1);
     eprintln!("[running {total_runs} queries]\n");
 
+    let model_name = engine.manifest().name.clone();
     let mut runs: Vec<RunStat> = Vec::with_capacity(total_runs);
     let mut idx = 0usize;
-    for _ in 0..repeats.max(1) {
+    for repeat_idx in 0..repeats.max(1) {
         for prompt in &prompts {
             idx += 1;
             let started = Instant::now();
@@ -603,6 +800,21 @@ fn bench_model(
                 gen_time,
                 tokens,
             });
+            if let Some(w) = csv_writer.as_mut() {
+                write_bench_csv_row(
+                    w,
+                    &model_name,
+                    prompt,
+                    repeat_idx + 1,
+                    resolved_ctx,
+                    ttft,
+                    total,
+                    gen_time,
+                    tokens,
+                    tps_post,
+                )
+                .with_context(|| format!("writing CSV row to {}", csv_path.unwrap().display()))?;
+            }
         }
     }
 
@@ -648,6 +860,245 @@ struct RunStat {
     ttft: Duration,
     gen_time: Duration,
     tokens: usize,
+}
+
+const BENCH_CSV_HEADER: &str =
+    "model,prompt,repeat,ctx,ttft_ms,total_ms,gen_ms,tokens,tps_post_ttft";
+
+/// Open the bench CSV at `path`, returning a buffered writer ready for
+/// row appends. Writes the header row only when the file did not exist
+/// (so re-runs against the same path append cleanly across versions).
+/// Errors with a clear message if the parent directory is missing.
+fn open_bench_csv(path: &Path) -> Result<std::io::BufWriter<std::fs::File>> {
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() && !parent.is_dir() {
+            return Err(anyhow!(
+                "CSV parent directory does not exist: {}",
+                parent.display()
+            ));
+        }
+    }
+    let needs_header = !path.exists();
+    let file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .with_context(|| format!("opening CSV {}", path.display()))?;
+    let mut writer = std::io::BufWriter::new(file);
+    if needs_header {
+        writeln!(writer, "{BENCH_CSV_HEADER}")?;
+    }
+    Ok(writer)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn write_bench_csv_row(
+    writer: &mut std::io::BufWriter<std::fs::File>,
+    model: &str,
+    prompt: &str,
+    repeat: usize,
+    ctx: u32,
+    ttft: Duration,
+    total: Duration,
+    gen_time: Duration,
+    tokens: usize,
+    tps_post: f64,
+) -> std::io::Result<()> {
+    writeln!(
+        writer,
+        "{model},{prompt_field},{repeat},{ctx},{ttft_ms:.3},{total_ms:.3},{gen_ms:.3},{tokens},{tps_post:.3}",
+        model = csv_field(model),
+        prompt_field = csv_field(prompt),
+        ttft_ms = ttft.as_secs_f64() * 1000.0,
+        total_ms = total.as_secs_f64() * 1000.0,
+        gen_ms = gen_time.as_secs_f64() * 1000.0,
+    )?;
+    writer.flush()
+}
+
+/// Quote a CSV field per RFC 4180 if it contains a comma, quote, or
+/// newline; otherwise emit it bare.
+fn csv_field(s: &str) -> String {
+    if s.contains([',', '"', '\n', '\r']) {
+        let escaped = s.replace('"', "\"\"");
+        format!("\"{escaped}\"")
+    } else {
+        s.to_string()
+    }
+}
+
+/// Strip an Ollama-style `:tag` suffix so `phi-3.5-mini:latest` compares
+/// equal to `phi-3.5-mini` against a server's loaded-model name.
+fn bare_model_name(name: &str) -> &str {
+    name.split(':').next().unwrap_or(name)
+}
+
+/// Dispatch a prompt to a running `npurun serve` over HTTP, streaming the
+/// SSE response to stdout. Validates the loaded model first via
+/// `/healthz` and aborts cleanly on mismatch (preferred per the
+/// follow-up briefing) rather than letting the server return whatever
+/// it has loaded.
+async fn run_remote(addr: &str, model: &str, prompt: &str, auth_token: Option<&str>) -> Result<()> {
+    if prompt.is_empty() {
+        return Err(anyhow!("prompt is empty; provide one as trailing argument"));
+    }
+    let bare = bare_model_name(model);
+    let client = reqwest::Client::builder()
+        .build()
+        .context("building HTTP client")?;
+
+    // 1. Validate the server is up and serving the requested model.
+    let health_url = format!("http://{addr}/healthz");
+    let mut req = client.get(&health_url).timeout(Duration::from_secs(2));
+    if let Some(tok) = auth_token {
+        req = req.bearer_auth(tok);
+    }
+    let resp = req.send().await.map_err(|e| {
+        anyhow!(
+            "no npurun serve responding at {addr} ({e}); either start one with `npurun serve` or drop --addr to load locally"
+        )
+    })?;
+    if !resp.status().is_success() {
+        return Err(anyhow!(
+            "server at {addr} returned HTTP {} for /healthz",
+            resp.status()
+        ));
+    }
+    let body_bytes = resp
+        .bytes()
+        .await
+        .with_context(|| format!("reading /healthz body from {addr}"))?;
+    let body: serde_json::Value = serde_json::from_slice(&body_bytes)
+        .with_context(|| format!("parsing /healthz body from {addr}"))?;
+    let loaded = body
+        .get("model")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| anyhow!("server at {addr} has no model loaded; cannot dispatch run"))?;
+    if bare_model_name(loaded) != bare {
+        return Err(anyhow!(
+            "server at {addr} has {loaded:?} loaded, but you asked to run {model:?}. \
+             Either restart serve with --model {bare}, point --addr at the right server, \
+             or drop --addr to load locally."
+        ));
+    }
+
+    // 2. Stream the chat completion.
+    let chat_url = format!("http://{addr}/v1/chat/completions");
+    let payload = serde_json::json!({
+        "model": bare,
+        "messages": [{"role": "user", "content": prompt}],
+        "stream": true,
+    });
+    let body = serde_json::to_string(&payload).context("serializing chat request body")?;
+    let mut req = client
+        .post(&chat_url)
+        .header(reqwest::header::CONTENT_TYPE, "application/json")
+        .body(body);
+    if let Some(tok) = auth_token {
+        req = req.bearer_auth(tok);
+    }
+    let started = Instant::now();
+    let resp = req
+        .send()
+        .await
+        .with_context(|| format!("POST {chat_url}"))?;
+    let status = resp.status();
+    if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+        // Per the briefing: do not retry on 429 — defeats the point of
+        // bypassing cold-load.
+        return Err(anyhow!(
+            "server at {addr} is busy (HTTP 429); another request holds the inference permit"
+        ));
+    }
+    if !status.is_success() {
+        let text = resp.text().await.unwrap_or_default();
+        return Err(anyhow!("server at {addr} returned HTTP {status}: {text}"));
+    }
+
+    use futures_util::StreamExt;
+    let mut stream = resp.bytes_stream();
+    let mut buf: Vec<u8> = Vec::with_capacity(1024);
+    let mut chunks_seen = 0usize;
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.context("reading SSE chunk")?;
+        buf.extend_from_slice(&chunk);
+        // Each SSE event ends with a blank line (`\n\n`). Consume
+        // complete events out of the buffer; leave the trailing partial
+        // event behind for the next iteration.
+        while let Some((end, term_len)) = find_event_terminator(&buf) {
+            let raw = buf[..end].to_vec();
+            buf.drain(..end + term_len);
+            if let Some(content) = extract_sse_content(&raw) {
+                if content == "[DONE]" {
+                    // Final event — stream is done.
+                    break;
+                }
+                if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&content) {
+                    if let Some(piece) = parsed
+                        .get("choices")
+                        .and_then(|c| c.as_array())
+                        .and_then(|arr| arr.first())
+                        .and_then(|c| c.get("delta"))
+                        .and_then(|d| d.get("content"))
+                        .and_then(|c| c.as_str())
+                    {
+                        if !piece.is_empty() {
+                            print!("{piece}");
+                            std::io::stdout().flush().ok();
+                            chunks_seen += 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    let elapsed = started.elapsed();
+    println!();
+    eprintln!(
+        "[remote {addr}: {chunks_seen} chunks in {elapsed:.2?}; ~{:.1} chunks/s]",
+        chunks_seen as f64 / elapsed.as_secs_f64()
+    );
+    Ok(())
+}
+
+/// Find the index and length of the next SSE event terminator (`\n\n`
+/// or `\r\n\r\n`) in `buf`. Returns the start index plus the
+/// terminator's byte length, or `None` if no complete event is yet
+/// buffered.
+fn find_event_terminator(buf: &[u8]) -> Option<(usize, usize)> {
+    let lf = buf.windows(2).position(|w| w == b"\n\n");
+    let crlf = buf.windows(4).position(|w| w == b"\r\n\r\n");
+    match (lf, crlf) {
+        (Some(a), Some(b)) if a <= b => Some((a, 2)),
+        (Some(_), Some(b)) => Some((b, 4)),
+        (Some(a), None) => Some((a, 2)),
+        (None, Some(b)) => Some((b, 4)),
+        (None, None) => None,
+    }
+}
+
+/// Extract the concatenated `data:` payload from a single SSE event.
+/// Multi-line `data:` runs are joined with `\n` per the SSE spec.
+/// Returns `None` if the event has no `data:` lines (comments, retry
+/// directives, etc.).
+fn extract_sse_content(event: &[u8]) -> Option<String> {
+    let text = std::str::from_utf8(event).ok()?;
+    let mut data = String::new();
+    let mut any = false;
+    for line in text.split(['\n', '\r']) {
+        if let Some(rest) = line.strip_prefix("data:") {
+            if any {
+                data.push('\n');
+            }
+            data.push_str(rest.trim_start_matches(' '));
+            any = true;
+        }
+    }
+    if any {
+        Some(data)
+    } else {
+        None
+    }
 }
 
 fn run_model(model: &str, prompt: &str) -> Result<()> {
@@ -709,5 +1160,159 @@ fn prepend_qairt_paths(qairt: &str) {
     env::set_var("PATH", new_path);
     if env::var_os("ADSP_LIBRARY_PATH").is_none() {
         env::set_var("ADSP_LIBRARY_PATH", &adsp);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn csv_field_passes_simple_strings_through() {
+        assert_eq!(csv_field("hello"), "hello");
+        assert_eq!(csv_field("phi-3.5-mini"), "phi-3.5-mini");
+    }
+
+    #[test]
+    fn csv_field_quotes_commas_quotes_newlines() {
+        assert_eq!(csv_field("a, b"), "\"a, b\"");
+        assert_eq!(csv_field("she said \"hi\""), "\"she said \"\"hi\"\"\"");
+        assert_eq!(csv_field("line1\nline2"), "\"line1\nline2\"");
+    }
+
+    #[test]
+    fn csv_writer_writes_header_then_row() {
+        let tmp =
+            std::env::temp_dir().join(format!("npurun-bench-csv-test-{}.csv", std::process::id()));
+        let _ = std::fs::remove_file(&tmp);
+
+        let mut w = open_bench_csv(&tmp).expect("open csv");
+        write_bench_csv_row(
+            &mut w,
+            "phi-3.5-mini",
+            "Hello, world",
+            1,
+            1024,
+            Duration::from_millis(120),
+            Duration::from_millis(800),
+            Duration::from_millis(680),
+            42,
+            61.7,
+        )
+        .expect("write row");
+        drop(w);
+
+        let body = std::fs::read_to_string(&tmp).expect("read csv");
+        let mut lines = body.lines();
+        assert_eq!(lines.next(), Some(BENCH_CSV_HEADER));
+        let row = lines.next().expect("data row");
+        assert!(row
+            .starts_with("phi-3.5-mini,\"Hello, world\",1,1024,120.000,800.000,680.000,42,61.700"));
+        assert_eq!(lines.next(), None);
+
+        // Re-open: must NOT emit a second header (caller is appending).
+        let mut w2 = open_bench_csv(&tmp).expect("reopen csv");
+        write_bench_csv_row(
+            &mut w2,
+            "phi-3.5-mini",
+            "second",
+            2,
+            1024,
+            Duration::from_millis(50),
+            Duration::from_millis(200),
+            Duration::from_millis(150),
+            10,
+            66.6,
+        )
+        .expect("append row");
+        drop(w2);
+        let body2 = std::fs::read_to_string(&tmp).expect("read csv after append");
+        let header_count = body2.lines().filter(|l| *l == BENCH_CSV_HEADER).count();
+        assert_eq!(header_count, 1, "header must only appear once");
+
+        let _ = std::fs::remove_file(&tmp);
+    }
+
+    #[test]
+    fn sse_terminator_finds_lf_lf() {
+        let buf = b"data: hi\n\nrest";
+        let (end, len) = find_event_terminator(buf).expect("found");
+        assert_eq!(&buf[..end], b"data: hi");
+        assert_eq!(len, 2);
+    }
+
+    #[test]
+    fn sse_terminator_finds_crlf_crlf() {
+        let buf = b"data: hi\r\n\r\nrest";
+        let (end, len) = find_event_terminator(buf).expect("found");
+        assert_eq!(&buf[..end], b"data: hi");
+        assert_eq!(len, 4);
+    }
+
+    #[test]
+    fn sse_terminator_returns_none_for_partial_event() {
+        assert!(find_event_terminator(b"data: hi\n").is_none());
+    }
+
+    #[test]
+    fn sse_extract_handles_chat_chunk() {
+        let evt = b"data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}";
+        let payload = extract_sse_content(evt).expect("payload");
+        let v: serde_json::Value = serde_json::from_str(&payload).unwrap();
+        assert_eq!(v["choices"][0]["delta"]["content"].as_str(), Some("hi"));
+    }
+
+    #[test]
+    fn sse_extract_returns_done_marker() {
+        assert_eq!(
+            extract_sse_content(b"data: [DONE]").as_deref(),
+            Some("[DONE]")
+        );
+    }
+
+    #[test]
+    fn sse_extract_skips_comment_only_event() {
+        assert_eq!(extract_sse_content(b": keep-alive"), None);
+    }
+
+    #[test]
+    fn detect_hexagon_arch_finds_compiled_archs() {
+        let tmp = std::env::temp_dir().join(format!("npurun-hexagon-test-{}", std::process::id()));
+        let lib = tmp.join("lib");
+        std::fs::create_dir_all(lib.join("hexagon-v73").join("unsigned")).unwrap();
+        std::fs::create_dir_all(lib.join("hexagon-v79").join("unsigned")).unwrap();
+        std::fs::create_dir_all(lib.join("aarch64-windows-msvc")).unwrap();
+
+        let arch = detect_hexagon_arch(&tmp).expect("found");
+        assert_eq!(arch, "hexagon-v73, hexagon-v79");
+
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn detect_hexagon_arch_returns_none_when_layout_missing() {
+        let tmp = std::env::temp_dir().join(format!("npurun-hexagon-empty-{}", std::process::id()));
+        std::fs::create_dir_all(tmp.join("lib")).unwrap();
+        assert!(detect_hexagon_arch(&tmp).is_none());
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn bare_model_name_strips_tag() {
+        assert_eq!(bare_model_name("phi-3.5-mini:latest"), "phi-3.5-mini");
+        assert_eq!(bare_model_name("phi-3.5-mini"), "phi-3.5-mini");
+    }
+
+    #[test]
+    fn csv_writer_errors_on_missing_parent_dir() {
+        let bogus = std::env::temp_dir()
+            .join("npurun-bench-csv-no-such-dir-9zA3pq")
+            .join("out.csv");
+        let err = open_bench_csv(&bogus).expect_err("must fail");
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("CSV parent directory does not exist"),
+            "unexpected error message: {msg}"
+        );
     }
 }

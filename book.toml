@@ -6,7 +6,7 @@
 
 [book]
 title = "npurun"
-description = "NPU-first local LLM runtime for Snapdragon X Elite (Windows on ARM)"
+description = "NPU-first local LLM runtime for Snapdragon X-series Windows-on-ARM laptops"
 authors = ["Brenden Bonker"]
 src = "docs"
 language = "en"

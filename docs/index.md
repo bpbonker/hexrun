@@ -1,6 +1,6 @@
 # npurun
 
-**NPU-first local LLM runtime for Snapdragon X Elite (Windows on ARM).**
+**NPU-first local LLM runtime for Snapdragon X-series Windows-on-ARM laptops.**
 
 This is the npurun documentation site. The headline numbers, prerequisites,
 and quick-start live in the project [README] — the chapters here are the

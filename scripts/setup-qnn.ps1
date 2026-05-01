@@ -37,7 +37,7 @@ if ($null -ne $npu) {
         & $status "$($d.FriendlyName)  [$($d.Status)]"
     }
 } else {
-    Write-Fail "No Qualcomm Hexagon NPU device found. This script must run on a Snapdragon X Elite / X Plus PC."
+    Write-Fail "No Qualcomm Hexagon NPU device found. This script must run on a Snapdragon X-series PC (X Elite, X Plus, or X2)."
     $problems += "no NPU device"
 }
 

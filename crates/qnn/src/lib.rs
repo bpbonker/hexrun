@@ -4,7 +4,7 @@
 //! Two layers:
 //! - The **Genie** module ([`genie`]) wraps `libGenie` (the higher-level LLM
 //!   runtime). This is the path used for inference of pre-built Snapdragon
-//!   X Elite NPU bundles like the Qwen 2.5 7B context binaries produced by
+//!   X-series NPU bundles like the Qwen 2.5 7B context binaries produced by
 //!   Qualcomm AI Hub. Genie ships an import library, so the bindings are
 //!   statically linked.
 //! - The **QNN core** wrappers (planned, future work) will wrap raw QNN

@@ -2,6 +2,23 @@
 
 A growing list of failure modes and how to diagnose them. PRs welcome.
 
+## Before filing a bug — run `npurun show-hardware`
+
+Most NPU loading issues come down to one of three things: the SDK isn't
+where npurun expects it, the Hexagon arch you have isn't in the SDK's
+shipped set, or libGenie didn't load at all. `npurun show-hardware`
+probes all three in one shot:
+
+```powershell
+npurun show-hardware
+```
+
+Paste the full output into the issue. It captures the SoC marketing
+name, the Qualcomm Hexagon NPU PnP entry Windows reports, the Hexagon
+architectures the installed QAIRT SDK ships support for, and both the
+QAIRT and libGenie versions. That's enough for someone else to tell
+whether you're on a configuration npurun has been tested against.
+
 ## "It runs but the NPU column in Task Manager stays at 0%"
 
 You're hitting silent CPU fallback. Three things to check, in order:

@@ -3,7 +3,7 @@
 //! Two parallel inference paths picked at model-load time:
 //! - `Backend::Genie`: load a Genie LLM bundle (compiled context-binary
 //!   shards) and run inference via the Genie C runtime. This is the
-//!   default and currently-supported LLM path on Snapdragon X Elite NPU.
+//!   default and currently-supported LLM path on Snapdragon X-series NPU.
 //!   Gated behind the `genie` feature.
 //! - `Backend::Ort`: ONNX Runtime with the QNN Execution Provider. Reserved
 //!   for non-LLM models and future work.

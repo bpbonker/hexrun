@@ -56,7 +56,7 @@ ndarray = "0.16"
 half = "2"
 
 # Build / FFI
-bindgen = "0.71"
+bindgen = "0.72"
 
 [profile.release]
 opt-level = 3

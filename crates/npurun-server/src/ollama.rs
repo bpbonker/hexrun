@@ -420,7 +420,13 @@ async fn run_blocking(
 ) -> Result<String, String> {
     tokio::task::spawn_blocking(move || {
         let _permit = permit;
-        engine.generate(&prompt).map_err(|e| e.to_string())
+        let res = engine.generate(&prompt).map_err(|e| e.to_string());
+        if res.is_err() {
+            if let Err(reset_err) = engine.reset_dialog() {
+                error!(error = %reset_err, "dialog reset after inference error also failed");
+            }
+        }
+        res
     })
     .await
     .map_err(|e| format!("inference task panicked: {e}"))?
@@ -433,7 +439,13 @@ async fn run_blocking_chat(
 ) -> Result<String, String> {
     tokio::task::spawn_blocking(move || {
         let _permit = permit;
-        engine.generate_chat(&messages).map_err(|e| e.to_string())
+        let res = engine.generate_chat(&messages).map_err(|e| e.to_string());
+        if res.is_err() {
+            if let Err(reset_err) = engine.reset_dialog() {
+                error!(error = %reset_err, "dialog reset after inference error also failed");
+            }
+        }
+        res
     })
     .await
     .map_err(|e| format!("inference task panicked: {e}"))?
@@ -463,16 +475,36 @@ fn ndjson_stream(
     let tx_clone = tx.clone();
     tokio::task::spawn_blocking(move || {
         let _permit = permit;
+        let mut aborted = false;
         let res = engine.generate_streaming(&user_prompt, |chunk| {
-            let _ = tx_clone.blocking_send(StreamItem::Content(chunk.to_string()));
+            if aborted {
+                return;
+            }
+            if tx_clone
+                .blocking_send(StreamItem::Content(chunk.to_string()))
+                .is_err()
+            {
+                aborted = true;
+                if let Err(e) = engine.signal_abort() {
+                    error!(error = %e, "signal_abort (client disconnect) failed");
+                }
+            }
         });
         match res {
             Ok(()) => {
                 let _ = tx_clone.blocking_send(StreamItem::Done);
             }
             Err(e) => {
-                error!(error = %e, "ollama streaming inference failed");
+                error!(error = %e, "ollama streaming inference failed; resetting dialog");
+                if let Err(reset_err) = engine.reset_dialog() {
+                    error!(error = %reset_err, "dialog reset after inference error also failed");
+                }
                 let _ = tx_clone.blocking_send(StreamItem::Error(e.to_string()));
+            }
+        }
+        if aborted {
+            if let Err(e) = engine.reset_dialog() {
+                error!(error = %e, "dialog reset after abort failed");
             }
         }
     });
@@ -527,16 +559,36 @@ fn ndjson_chat_stream(
     let tx_clone = tx.clone();
     tokio::task::spawn_blocking(move || {
         let _permit = permit;
+        let mut aborted = false;
         let res = engine.generate_chat_streaming(&messages, |chunk| {
-            let _ = tx_clone.blocking_send(StreamItem::Content(chunk.to_string()));
+            if aborted {
+                return;
+            }
+            if tx_clone
+                .blocking_send(StreamItem::Content(chunk.to_string()))
+                .is_err()
+            {
+                aborted = true;
+                if let Err(e) = engine.signal_abort() {
+                    error!(error = %e, "signal_abort (client disconnect) failed");
+                }
+            }
         });
         match res {
             Ok(()) => {
                 let _ = tx_clone.blocking_send(StreamItem::Done);
             }
             Err(e) => {
-                error!(error = %e, "ollama streaming chat inference failed");
+                error!(error = %e, "ollama streaming chat inference failed; resetting dialog");
+                if let Err(reset_err) = engine.reset_dialog() {
+                    error!(error = %reset_err, "dialog reset after inference error also failed");
+                }
                 let _ = tx_clone.blocking_send(StreamItem::Error(e.to_string()));
+            }
+        }
+        if aborted {
+            if let Err(e) = engine.reset_dialog() {
+                error!(error = %e, "dialog reset after abort failed");
             }
         }
     });

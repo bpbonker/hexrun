@@ -75,7 +75,21 @@ fn status_name(code: i32) -> &'static str {
 }
 
 fn check(code: sys::Genie_Status_t) -> Result<(), GenieError> {
+    // Genie's status codes split into three regimes:
+    //   0          — SUCCESS
+    //   positive   — WARNINGs (the call completed; partial result is valid):
+    //                  1 = WARNING_ABORTED          (signal_abort interrupted)
+    //                  2 = WARNING_BOUND_HANDLE
+    //                  3 = WARNING_PAUSED
+    //                  4 = WARNING_CONTEXT_EXCEEDED (max ctx; partial reply OK)
+    //                Treating these as errors throws away a perfectly good
+    //                partial response — chat clients then see a 500 instead
+    //                of the truncated reply they should be able to render.
+    //   negative   — hard ERRORs (the call failed; partial state is unsafe).
     if code == 0 {
+        Ok(())
+    } else if code > 0 {
+        debug!(code, name = status_name(code), "Genie returned a warning; treating as success");
         Ok(())
     } else {
         Err(GenieError::Status {
@@ -383,6 +397,33 @@ impl Dialog {
     pub fn reset(&self) -> Result<(), GenieError> {
         // SAFETY: handle is a valid handle from a successful create call.
         let rc = unsafe { sys::GenieDialog_reset(self.handle) };
+        check(rc)
+    }
+
+    /// Signal the dialog to abort an in-flight `query_streaming*` call.
+    ///
+    /// Designed by Qualcomm to be called from a different thread than the
+    /// one blocked inside Genie; the next time Genie checks for signals
+    /// (between tokens) it returns with `SentenceCode::Abort`. The
+    /// callback is invoked one final time with the abort code, then
+    /// `query_streaming` returns with success status. The dialog handle
+    /// remains usable; call [`Self::reset`] to clear KV cache state if
+    /// the next query should not see the aborted prompt.
+    ///
+    /// Returns `Ok(())` if the signal was delivered (whether or not it
+    /// actually interrupted anything — calling on an idle dialog is a
+    /// no-op from Genie's perspective). Returns an error if the dialog
+    /// handle is invalid or Genie rejects the action.
+    pub fn signal_abort(&self) -> Result<(), GenieError> {
+        // SAFETY: handle is a valid handle from a successful create call.
+        // ACTION_ABORT = 1 from Genie's enum; the bindgen constant lives
+        // at sys::GenieDialog_Action_t_GENIE_DIALOG_ACTION_ABORT.
+        let rc = unsafe {
+            sys::GenieDialog_signal(
+                self.handle,
+                sys::GenieDialog_Action_t_GENIE_DIALOG_ACTION_ABORT,
+            )
+        };
         check(rc)
     }
 }

@@ -1,0 +1,659 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>npurun chat</title>
+  <style>
+    :root {
+      --bg: #0e1116;
+      --panel: #161b22;
+      --border: #30363d;
+      --text: #e6edf3;
+      --muted: #7d8590;
+      --accent: #2f81f7;
+      --user: #1f6feb;
+      --assistant: #238636;
+      --error: #f85149;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      height: 100vh;
+    }
+    header {
+      padding: 10px 16px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+      background: var(--panel);
+    }
+    header h1 {
+      font-size: 14px;
+      margin: 0 8px 0 0;
+      font-weight: 600;
+    }
+    header input, header button {
+      background: var(--bg);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 4px 8px;
+      font-size: 12px;
+      font-family: inherit;
+    }
+    header button {
+      cursor: pointer;
+    }
+    header button:hover { border-color: var(--accent); }
+    header .status {
+      margin-left: auto;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    header .status.ok { color: var(--assistant); }
+    header .status.err { color: var(--error); }
+    main {
+      overflow-y: auto;
+      padding: 16px;
+    }
+    .msg {
+      max-width: 800px;
+      margin: 0 auto 12px;
+      padding: 10px 14px;
+      border-radius: 10px;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      border: 1px solid var(--border);
+      background: var(--panel);
+    }
+    .msg .role {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 4px;
+      color: var(--muted);
+    }
+    .msg.user .role { color: var(--user); }
+    .msg.assistant .role { color: var(--assistant); }
+    .msg.system .role { color: var(--muted); }
+    .msg.error {
+      border-color: var(--error);
+    }
+    .msg.error .role { color: var(--error); }
+    footer {
+      padding: 10px 16px;
+      border-top: 1px solid var(--border);
+      background: var(--panel);
+      display: flex;
+      gap: 8px;
+    }
+    footer textarea {
+      flex: 1;
+      background: var(--bg);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 8px;
+      font-family: inherit;
+      font-size: 14px;
+      resize: vertical;
+      min-height: 40px;
+      max-height: 160px;
+    }
+    footer button {
+      background: var(--accent);
+      color: white;
+      border: none;
+      border-radius: 6px;
+      padding: 8px 16px;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    footer button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .hint {
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 24px 14px;
+      color: var(--muted);
+      font-size: 13px;
+      text-align: center;
+    }
+    .hint code {
+      background: var(--panel);
+      padding: 2px 6px;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+    }
+    .metrics-bar {
+      display: flex;
+      gap: 14px;
+      padding: 6px 16px;
+      background: var(--panel);
+      border-bottom: 1px solid var(--border);
+      font-size: 11px;
+      color: var(--muted);
+      flex-wrap: wrap;
+      font-variant-numeric: tabular-nums;
+    }
+    .metrics-bar .metric { display: inline-flex; gap: 6px; align-items: baseline; }
+    .metrics-bar .metric .label { text-transform: uppercase; letter-spacing: 0.05em; opacity: 0.75; }
+    .metrics-bar .metric .value { color: var(--text); font-weight: 600; }
+    .msg .stats {
+      margin-top: 6px;
+      padding-top: 6px;
+      border-top: 1px dashed var(--border);
+      font-size: 11px;
+      color: var(--muted);
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      font-variant-numeric: tabular-nums;
+    }
+    .msg .stats .stat .v { color: var(--text); font-weight: 600; }
+    .toolbox {
+      font-size: 12px;
+      color: var(--muted);
+      display: inline-flex;
+      gap: 4px;
+      align-items: center;
+      cursor: pointer;
+    }
+    .toolbox input { margin: 0; }
+    .msg.tool {
+      background: #0d1f2d;
+      border-color: #1f4d7a;
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+      font-size: 12.5px;
+    }
+    .msg.tool .role { color: #58a6ff; }
+    body { grid-template-rows: auto auto 1fr auto; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>npurun chat</h1>
+    <input id="baseUrl" placeholder="http://127.0.0.1:11435" size="26" />
+    <input id="model" placeholder="phi-3.5-mini" size="16" />
+    <input id="authToken" placeholder="bearer token (if --auth-token)" type="password" size="22" />
+    <button id="resetBtn" title="Clear conversation">reset</button>
+    <button id="saveBtn" title="Download transcript">save</button>
+    <label class="toolbox" title="Expose built-in get_current_time + calc tools to the model. Forces non-streaming.">
+      <input type="checkbox" id="toolsToggle" /> tools
+    </label>
+    <span id="status" class="status">disconnected</span>
+  </header>
+
+  <div class="metrics-bar" id="metricsBar">
+    <span class="metric"><span class="label">turns</span><span class="value" id="m-turns">0</span></span>
+    <span class="metric"><span class="label">tokens</span><span class="value" id="m-tokens">0</span></span>
+    <span class="metric"><span class="label">avg tok/s</span><span class="value" id="m-tps">—</span></span>
+    <span class="metric"><span class="label">avg ttft</span><span class="value" id="m-ttft">—</span></span>
+    <span class="metric"><span class="label">est. compute</span><span class="value" id="m-gops">—</span></span>
+    <span class="metric"><span class="label">model</span><span class="value" id="m-params">—</span></span>
+  </div>
+
+  <main id="messages">
+    <div class="hint">
+      Start <code>npurun serve --model phi-3.5-mini</code>, then type a message below.
+    </div>
+  </main>
+
+  <footer>
+    <textarea id="input" placeholder="Type a message — Enter to send, Shift+Enter for newline"></textarea>
+    <button id="sendBtn">send</button>
+  </footer>
+
+  <script>
+    const $ = id => document.getElementById(id);
+    const baseUrlInput = $("baseUrl");
+    const modelInput = $("model");
+    const tokenInput = $("authToken");
+    const toolsToggle = $("toolsToggle");
+    const statusEl = $("status");
+    const messagesEl = $("messages");
+    const inputEl = $("input");
+    const sendBtn = $("sendBtn");
+
+    // Persist settings across reloads.
+    const LS = {
+      base: "npurun.baseUrl",
+      model: "npurun.model",
+      token: "npurun.authToken",
+      tools: "npurun.tools",
+    };
+    const defaultBase = window.location.origin && window.location.origin !== "null"
+      ? window.location.origin
+      : "http://127.0.0.1:11435";
+    baseUrlInput.value = localStorage.getItem(LS.base) || defaultBase;
+    modelInput.value = localStorage.getItem(LS.model) || "phi-3.5-mini";
+    tokenInput.value = localStorage.getItem(LS.token) || "";
+    toolsToggle.checked = localStorage.getItem(LS.tools) === "1";
+    [
+      [baseUrlInput, LS.base],
+      [modelInput, LS.model],
+      [tokenInput, LS.token],
+    ].forEach(([el, k]) => {
+      el.addEventListener("change", () => localStorage.setItem(k, el.value));
+    });
+    toolsToggle.addEventListener("change", () => {
+      localStorage.setItem(LS.tools, toolsToggle.checked ? "1" : "0");
+    });
+
+    let history = [];
+
+    // Rough param counts for known models (in billions). Used to
+    // estimate compute throughput (GOP/s) from measured tokens/sec.
+    // Per-token op count for a transformer LLM is ~ 2 × N_params on
+    // the matmul fast path. The result is "model compute throughput",
+    // *not* hardware peak TOPS — LLM inference is memory-bandwidth-
+    // bound, so it sits well below the NPU's INT8 spec-sheet number.
+    const MODEL_PARAMS_B = {
+      "phi-3.5-mini": 3.8,
+      "llama-v3-1-8b-instruct": 8.0,
+      "qwen-2-5-7b": 7.6,
+    };
+    function paramsForModel(name) {
+      if (!name) return null;
+      const bare = String(name).split(":")[0];
+      return MODEL_PARAMS_B[bare] ?? null;
+    }
+    function fmtMs(ms) { return ms < 1000 ? `${ms.toFixed(0)} ms` : `${(ms / 1000).toFixed(2)} s`; }
+    function fmtTps(t) { return t == null || !isFinite(t) ? "—" : t.toFixed(1); }
+    function fmtGops(g) { return g == null || !isFinite(g) ? "—" : `${g.toFixed(1)} GOP/s`; }
+
+    // Aggregate session stats.
+    const session = {
+      turns: 0,
+      tokens: 0,
+      ttftSumMs: 0,
+      genMs: 0,
+    };
+    function refreshMetricsBar() {
+      $("m-turns").textContent = session.turns;
+      $("m-tokens").textContent = session.tokens;
+      const avgTps = session.genMs > 0
+        ? (session.tokens - session.turns) / (session.genMs / 1000)
+        : null;
+      $("m-tps").textContent = fmtTps(avgTps);
+      const avgTtft = session.turns > 0 ? session.ttftSumMs / session.turns : null;
+      $("m-ttft").textContent = avgTtft == null ? "—" : fmtMs(avgTtft);
+      const params = paramsForModel(modelInput.value);
+      const gops = avgTps != null && params != null ? 2 * params * avgTps : null;
+      $("m-gops").textContent = fmtGops(gops);
+      $("m-params").textContent = params ? `${params}B (${modelInput.value})` : (modelInput.value || "—");
+    }
+    refreshMetricsBar();
+    modelInput.addEventListener("change", refreshMetricsBar);
+
+    function setStatus(text, kind) {
+      statusEl.textContent = text;
+      statusEl.className = "status " + (kind || "");
+    }
+
+    function authHeader() {
+      const t = tokenInput.value.trim();
+      return t ? { Authorization: "Bearer " + t } : {};
+    }
+
+    async function probe() {
+      try {
+        const res = await fetch(baseUrlInput.value + "/healthz", {
+          headers: authHeader(),
+        });
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        const j = await res.json();
+        setStatus(`${j.status} — ${j.model || "no model"} · ${j.uptime_seconds}s`, "ok");
+        return j;
+      } catch (e) {
+        setStatus("server unreachable: " + e.message, "err");
+        return null;
+      }
+    }
+    probe();
+    baseUrlInput.addEventListener("change", probe);
+    tokenInput.addEventListener("change", probe);
+
+    function renderMsg(role, content, opts = {}) {
+      // Remove the placeholder hint on first real message.
+      const hint = messagesEl.querySelector(".hint");
+      if (hint) hint.remove();
+      const div = document.createElement("div");
+      div.className = "msg " + role + (opts.error ? " error" : "");
+      const r = document.createElement("div");
+      r.className = "role";
+      r.textContent = opts.error ? "error" : role;
+      const c = document.createElement("div");
+      c.className = "content";
+      c.textContent = content;
+      div.appendChild(r);
+      div.appendChild(c);
+      messagesEl.appendChild(div);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+      // expose the message wrapper so callers can attach a stats row.
+      c.parentMsg = div;
+      return c;
+    }
+
+    function renderStats(msgDiv, stats) {
+      // stats: { ttft_ms, total_ms, tokens, tps_post_ttft, gops }
+      const old = msgDiv.querySelector(".stats");
+      if (old) old.remove();
+      const row = document.createElement("div");
+      row.className = "stats";
+      const items = [
+        ["ttft", fmtMs(stats.ttft_ms)],
+        ["total", fmtMs(stats.total_ms)],
+        ["tokens", String(stats.tokens)],
+        ["tok/s", fmtTps(stats.tps_post_ttft)],
+      ];
+      if (stats.gops != null) items.push(["compute", fmtGops(stats.gops)]);
+      for (const [label, value] of items) {
+        const span = document.createElement("span");
+        span.className = "stat";
+        span.innerHTML = `<span class="l">${label}</span> <span class="v">${value}</span>`;
+        row.appendChild(span);
+      }
+      msgDiv.appendChild(row);
+    }
+
+    // Built-in tools the page exposes to the model when the `tools`
+    // toggle is on. Kept deliberately tiny so the demo round-trip is
+    // legible — adding more is a copy-paste of the spec + dispatcher
+    // entry. The arguments schema follows the OpenAI tool spec format.
+    const BUILTIN_TOOLS = [
+      {
+        type: "function",
+        function: {
+          name: "get_current_time",
+          description: "Return the current local date and time as an ISO 8601 string.",
+          parameters: { type: "object", properties: {}, required: [] },
+        },
+      },
+      {
+        type: "function",
+        function: {
+          name: "calc",
+          description:
+            "Evaluate a basic arithmetic expression. Supports + - * / and parentheses on numeric literals.",
+          parameters: {
+            type: "object",
+            properties: {
+              expression: {
+                type: "string",
+                description: "Arithmetic expression, e.g. \"(12 + 7) * 3\"",
+              },
+            },
+            required: ["expression"],
+          },
+        },
+      },
+    ];
+
+    function dispatchTool(name, args) {
+      if (name === "get_current_time") {
+        return new Date().toISOString();
+      }
+      if (name === "calc") {
+        const expr = String(args?.expression ?? "").trim();
+        // Allow only digits, operators, parens, decimals, whitespace.
+        // Rejects identifiers — no `Math.X`, no function calls.
+        if (!/^[0-9+\-*/().\s]+$/.test(expr)) {
+          return `error: refused unsafe expression: ${JSON.stringify(expr)}`;
+        }
+        try {
+          // eslint-disable-next-line no-new-func
+          const value = Function(`"use strict"; return (${expr});`)();
+          return String(value);
+        } catch (e) {
+          return `error: ${e.message}`;
+        }
+      }
+      return `error: unknown tool ${name}`;
+    }
+
+    async function sendMessage() {
+      const text = inputEl.value.trim();
+      if (!text) return;
+      inputEl.value = "";
+      sendBtn.disabled = true;
+
+      history.push({ role: "user", content: text });
+      renderMsg("user", text);
+
+      if (toolsToggle.checked) {
+        try {
+          await sendWithTools();
+        } finally {
+          sendBtn.disabled = false;
+          inputEl.focus();
+        }
+        return;
+      }
+
+      const replyEl = renderMsg("assistant", "");
+
+      const body = JSON.stringify({
+        model: modelInput.value,
+        messages: history,
+        stream: true,
+        max_tokens: 512,
+      });
+
+      const turnStart = performance.now();
+      let ttftMs = null;
+      let chunkCount = 0;
+
+      try {
+        const res = await fetch(baseUrlInput.value + "/v1/chat/completions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...authHeader() },
+          body,
+        });
+        if (!res.ok) {
+          const err = await res.text();
+          renderMsg("assistant", err || "HTTP " + res.status, { error: true });
+          history.pop(); // drop the dangling user message
+          return;
+        }
+
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        let assembled = "";
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          let nl;
+          while ((nl = buffer.indexOf("\n")) !== -1) {
+            const line = buffer.slice(0, nl).trim();
+            buffer = buffer.slice(nl + 1);
+            if (!line.startsWith("data:")) continue;
+            const data = line.slice(5).trim();
+            if (data === "[DONE]") break;
+            try {
+              const chunk = JSON.parse(data);
+              const delta = chunk.choices?.[0]?.delta?.content;
+              if (delta) {
+                if (ttftMs == null) ttftMs = performance.now() - turnStart;
+                chunkCount += 1;
+                assembled += delta;
+                replyEl.textContent = assembled;
+                messagesEl.scrollTop = messagesEl.scrollHeight;
+              }
+            } catch { /* ignore parse errors on partial chunks */ }
+          }
+        }
+
+        const totalMs = performance.now() - turnStart;
+        const genMs = ttftMs != null ? Math.max(totalMs - ttftMs, 0) : 0;
+        const tps = chunkCount > 1 && genMs > 0 ? (chunkCount - 1) / (genMs / 1000) : null;
+        const params = paramsForModel(modelInput.value);
+        const gops = tps != null && params != null ? 2 * params * tps : null;
+
+        if (assembled.trim()) {
+          history.push({ role: "assistant", content: assembled.trim() });
+          renderStats(replyEl.parentMsg, {
+            ttft_ms: ttftMs ?? totalMs,
+            total_ms: totalMs,
+            tokens: chunkCount,
+            tps_post_ttft: tps,
+            gops: gops,
+          });
+          // Update session aggregates.
+          session.turns += 1;
+          session.tokens += chunkCount;
+          session.ttftSumMs += ttftMs ?? totalMs;
+          session.genMs += genMs;
+          refreshMetricsBar();
+        } else {
+          history.pop(); // drop the user message — no reply came
+          replyEl.parentElement.remove();
+          renderMsg("assistant", "(empty reply — check the serve window)", { error: true });
+        }
+      } catch (e) {
+        renderMsg("assistant", e.message, { error: true });
+        history.pop();
+      } finally {
+        sendBtn.disabled = false;
+        inputEl.focus();
+      }
+    }
+
+    // Tool-aware path. The server rejects stream + tools, so we use
+    // blocking responses and run up to MAX_TOOL_HOPS dispatch cycles
+    // before forcing a final answer. Each cycle pushes the assistant's
+    // tool_call into history, dispatches each tool locally, pushes the
+    // role: "tool" results, and re-POSTs.
+    async function postBlocking(payload) {
+      const res = await fetch(baseUrlInput.value + "/v1/chat/completions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeader() },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const txt = await res.text();
+        throw new Error(`HTTP ${res.status}: ${txt}`);
+      }
+      return res.json();
+    }
+
+    async function sendWithTools() {
+      const MAX_TOOL_HOPS = 3;
+      try {
+        for (let hop = 0; hop < MAX_TOOL_HOPS; hop += 1) {
+          const turnStart = performance.now();
+          const json = await postBlocking({
+            model: modelInput.value,
+            messages: history,
+            stream: false,
+            max_tokens: 256,
+            tools: BUILTIN_TOOLS,
+          });
+          const choice = json.choices?.[0] ?? {};
+          const message = choice.message ?? {};
+          const calls = Array.isArray(message.tool_calls) ? message.tool_calls : null;
+
+          if (calls && calls.length > 0) {
+            // Reconstruct what the model emitted so the next prefill
+            // sees the call inline. The server folds role:"tool" into a
+            // synthetic user message tagged with the tool_call_id.
+            const reconstructed = calls
+              .map(c => {
+                let argsObj;
+                try { argsObj = JSON.parse(c.function?.arguments ?? "{}"); }
+                catch { argsObj = {}; }
+                return `<tool_call>${JSON.stringify({ name: c.function?.name, arguments: argsObj })}</tool_call>`;
+              })
+              .join("\n");
+            history.push({
+              role: "assistant",
+              content: reconstructed,
+              tool_calls: calls,
+            });
+            const callDiv = renderMsg("tool", `[model -> tool] ${reconstructed}`);
+            renderStats(callDiv.parentMsg, {
+              ttft_ms: 0,
+              total_ms: performance.now() - turnStart,
+              tokens: 0,
+              tps_post_ttft: null,
+            });
+
+            for (const c of calls) {
+              const name = c.function?.name ?? "?";
+              let args = {};
+              try { args = JSON.parse(c.function?.arguments ?? "{}"); }
+              catch { /* keep empty */ }
+              const result = dispatchTool(name, args);
+              history.push({ role: "tool", tool_call_id: c.id, content: result });
+              renderMsg("tool", `[tool -> ${name}] ${result}`);
+            }
+            // Loop: feed the tool results back to the model.
+            continue;
+          }
+
+          // No tool calls — render the final assistant reply and stop.
+          const text = message.content ?? "";
+          history.push({ role: "assistant", content: text });
+          const totalMs = performance.now() - turnStart;
+          const replyDiv = renderMsg("assistant", text);
+          renderStats(replyDiv.parentMsg, {
+            ttft_ms: totalMs,
+            total_ms: totalMs,
+            tokens: Math.max(1, Math.round(text.length / 4)),
+            tps_post_ttft: null,
+          });
+          session.turns += 1;
+          refreshMetricsBar();
+          return;
+        }
+        renderMsg("assistant", `(stopped after ${MAX_TOOL_HOPS} tool hops without a final answer)`, { error: true });
+      } catch (e) {
+        renderMsg("assistant", e.message, { error: true });
+        // Drop the dangling user message so the next turn starts clean.
+        if (history.length && history[history.length - 1].role === "user") history.pop();
+      }
+    }
+
+    sendBtn.addEventListener("click", sendMessage);
+    inputEl.addEventListener("keydown", e => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        sendMessage();
+      }
+    });
+
+    $("resetBtn").addEventListener("click", () => {
+      history = [];
+      messagesEl.innerHTML = '<div class="hint">conversation cleared</div>';
+      session.turns = 0;
+      session.tokens = 0;
+      session.ttftSumMs = 0;
+      session.genMs = 0;
+      refreshMetricsBar();
+    });
+
+    $("saveBtn").addEventListener("click", () => {
+      const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+      const text = history.map(m => `${m.role}> ${m.content}`).join("\n\n");
+      const blob = new Blob([text], { type: "text/plain" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `npurun-chat-${stamp}.txt`;
+      a.click();
+    });
+
+    inputEl.focus();
+  </script>
+</body>
+</html>

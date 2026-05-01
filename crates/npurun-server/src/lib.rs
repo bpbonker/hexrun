@@ -104,8 +104,22 @@ pub fn router(state: ServerState) -> Router {
         .merge(api)
         .route("/healthz", axum::routing::get(healthz))
         .route("/", axum::routing::get(root_index))
+        .route("/chat", axum::routing::get(chat_ui))
         .layer(cors)
         .with_state(state)
+}
+
+/// Bundled single-file chat UI served at `/chat`. Source lives at
+/// `tools/web-chat/index.html`; baked into the binary at compile time so
+/// the server has no path dependency. Talks to `/v1/chat/completions`
+/// on the same origin.
+async fn chat_ui() -> impl IntoResponse {
+    const HTML: &str = include_str!("../../../tools/web-chat/index.html");
+    (
+        StatusCode::OK,
+        [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
+        HTML,
+    )
 }
 
 /// Bearer-token middleware. Skips when `state.auth_token` is None.
@@ -165,6 +179,7 @@ async fn root_index() -> Json<serde_json::Value> {
                 "POST /api/show", "POST /api/delete",
             ],
             "health": ["GET /healthz"],
+            "ui": ["GET /chat"],
         },
     }))
 }

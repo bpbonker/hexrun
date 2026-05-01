@@ -25,6 +25,9 @@ If you set `--auth-token <TOKEN>`, supply it as the API key (or
 
 ## Recipes
 
+- [Bundled web chat (`/chat`)](web-chat.md) — open a browser at
+  `http://127.0.0.1:11435/chat`. Zero install. Lowest-friction
+  way to see npurun work.
 - [curl + raw HTTP](curl.md) — the smallest possible smoke test.
 - [Python (`openai` SDK)](python.md) — drop-in for any code that
   already targets OpenAI.

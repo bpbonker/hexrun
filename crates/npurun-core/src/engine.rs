@@ -427,6 +427,21 @@ impl Engine {
         Ok(())
     }
 
+    /// Signal an in-flight query to abort. Intended to be called from a
+    /// different thread than the one blocked inside Genie — typically from
+    /// an HTTP handler that detects the client has disconnected, so the
+    /// blocking inference task on the Tokio blocking pool can wind down
+    /// and release its inference permit instead of running to completion.
+    ///
+    /// Genie checks for the signal between generated tokens and returns
+    /// from `query_streaming*` with `SentenceCode::Abort`. The caller
+    /// should then [`Self::reset_dialog`] before issuing another query.
+    #[cfg(feature = "genie")]
+    pub fn signal_abort(&self) -> Result<(), EngineError> {
+        self.dialog.signal_abort()?;
+        Ok(())
+    }
+
     /// Blocking variant of [`Self::generate_chat_streaming`].
     #[cfg(feature = "genie")]
     pub fn generate_chat(&self, messages: &[ChatMessage]) -> Result<String, EngineError> {

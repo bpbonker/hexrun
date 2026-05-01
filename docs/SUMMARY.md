@@ -17,6 +17,7 @@
 # Integrations
 
 - [Overview](integrations/index.md)
+- [Bundled web chat (`/chat`)](integrations/web-chat.md)
 - [curl + raw HTTP](integrations/curl.md)
 - [Python (`openai` SDK)](integrations/python.md)
 - [JavaScript / TypeScript](integrations/javascript.md)

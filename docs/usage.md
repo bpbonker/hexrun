@@ -245,6 +245,7 @@ npurun serve --model phi-3.5-mini --no-warmup
 |---|---|---|
 | GET | `/healthz` | JSON: status, model, uptime, auth on/off, version. |
 | GET | `/` | Index of available endpoints. |
+| GET | `/chat` | Bundled single-file chat UI. Open in a browser; talks to `/v1/chat/completions` on the same origin. |
 
 #### JSON mode (`response_format: json_object`)
 

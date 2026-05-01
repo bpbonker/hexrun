@@ -1,7 +1,7 @@
 # yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.6.0.schema.json
 
 PackageIdentifier: bpbonker.npurun
-PackageVersion: 0.1.0-rc.2
+PackageVersion: 0.1.0-rc.3
 PackageLocale: en-US
 Publisher: Brenden Bonker
 PublisherUrl: https://github.com/bpbonker
@@ -60,7 +60,7 @@ ReleaseNotes: |-
   - Multi-turn chat via Genie KV-cache prefix matching
 
   See the GitHub release page for full notes.
-ReleaseNotesUrl: https://github.com/bpbonker/npurun/releases/tag/v0.1.0-rc.2
+ReleaseNotesUrl: https://github.com/bpbonker/npurun/releases/tag/v0.1.0-rc.3
 PurchaseUrl: https://buymeacoffee.com/bpbprofessional
 ManifestType: defaultLocale
 ManifestVersion: 1.6.0

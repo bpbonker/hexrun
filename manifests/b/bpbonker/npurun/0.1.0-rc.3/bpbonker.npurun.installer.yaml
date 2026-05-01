@@ -1,7 +1,7 @@
 # yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.6.0.schema.json
 
 PackageIdentifier: bpbonker.npurun
-PackageVersion: 0.1.0-rc.2
+PackageVersion: 0.1.0-rc.3
 MinimumOSVersion: 10.0.22621.0
 InstallerType: zip
 NestedInstallerType: portable
@@ -13,7 +13,7 @@ Commands:
 ReleaseDate: 2026-05-01
 Installers:
 - Architecture: arm64
-  InstallerUrl: https://github.com/bpbonker/npurun/releases/download/v0.1.0-rc.2/npurun-0.1.0-rc.2-aarch64-windows.zip
-  InstallerSha256: CF25A36901A5C002E28F72285E01974AED66354A43D3A5F3ADE0F78E779120C4
+  InstallerUrl: https://github.com/bpbonker/npurun/releases/download/v0.1.0-rc.3/npurun-0.1.0-rc.3-aarch64-windows.zip
+  InstallerSha256: 9E74CD5C3272AA0753CC7B984E9B9B09AAD30630EE53681CD3D6B4860875A81D
 ManifestType: installer
 ManifestVersion: 1.6.0

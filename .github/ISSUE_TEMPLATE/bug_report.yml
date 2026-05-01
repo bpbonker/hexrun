@@ -1,0 +1,124 @@
+name: Bug report
+description: Something doesn't work the way it should
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for filing a report. Most NPU loading issues come down to a
+        configuration we haven't tested against — the more concrete you can
+        be about your hardware and what you saw, the faster we can land a
+        fix or a workaround.
+
+        Please run `npurun show-hardware` and `npurun version` and paste
+        their output below. They tell us in one shot what SoC you're on,
+        what Hexagon archs your QAIRT SDK ships, and which libGenie is
+        loaded. Without these we're guessing.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What did you run, and what went wrong?
+      placeholder: |
+        Ran `npurun run phi-3.5-mini "hi"` and got error X.
+        Task Manager NPU column stayed at 0% during generation.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected to happen
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction
+      description: Smallest commands that trigger the bug.
+      render: powershell
+      placeholder: |
+        npurun pull phi-3.5-mini
+        npurun run phi-3.5-mini "hello"
+    validations:
+      required: true
+
+  - type: textarea
+    id: show-hardware
+    attributes:
+      label: Output of `npurun show-hardware`
+      description: |
+        This is the single most useful piece of context. If this command
+        errors or hangs, paste the error here verbatim.
+      render: text
+      placeholder: |
+        SoC:              Snapdragon(R) X 12-core X1E80100 @ 3.40 GHz
+        NPU:              Snapdragon(R) X Elite - X1E80100 - Qualcomm(R) Hexagon(TM) NPU
+        Hexagon arch:     hexagon-v66, hexagon-v68, ...
+        QAIRT SDK:        2.45.0  (C:\...\qairt\2.45.0)
+        libGenie:         1.17.0
+    validations:
+      required: true
+
+  - type: textarea
+    id: version
+    attributes:
+      label: Output of `npurun version`
+      render: text
+      placeholder: |
+        npurun       0.1.0-rc.3
+        libGenie     1.17.0
+        QAIRT SDK    2.45.0  (C:\...\qairt\2.45.0)
+    validations:
+      required: true
+
+  - type: input
+    id: hardware
+    attributes:
+      label: Laptop / form factor
+      description: e.g. Surface Pro 11, ASUS Vivobook S 15, Lenovo ThinkPad T14s G6.
+    validations:
+      required: true
+
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version
+      description: Output of `winver` (e.g. 24H2 build 26100.4061).
+    validations:
+      required: true
+
+  - type: dropdown
+    id: client
+    attributes:
+      label: Client (if relevant)
+      description: Which app or HTTP client was talking to npurun?
+      options:
+        - npurun CLI directly (run/bench)
+        - curl / raw HTTP
+        - Open WebUI
+        - AnythingLLM (Generic OpenAI provider)
+        - Continue.dev / VS Code extension
+        - Ollama-compatible client
+        - Python openai SDK
+        - Other (describe in "What happened")
+        - Not applicable
+    validations:
+      required: true
+
+  - type: textarea
+    id: rust-log
+    attributes:
+      label: RUST_LOG=npurun=debug,qnn=debug output
+      description: Re-run with this env var set; paste the output (or relevant tail).
+      render: text
+
+  - type: textarea
+    id: qnn-htp-log
+    attributes:
+      label: QnnHtp.log (if relevant)
+      description: Set `QNN_LOG_LEVEL=PROFILE` and re-run; attach the resulting log. Redact paths if needed.
+      render: text

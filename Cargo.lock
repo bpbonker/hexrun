@@ -1240,7 +1240,7 @@ dependencies = [
 
 [[package]]
 name = "npurun-cli"
-version = "0.1.0-rc.2"
+version = "0.1.0-rc.3"
 dependencies = [
  "anyhow",
  "clap",
@@ -1259,7 +1259,7 @@ dependencies = [
 
 [[package]]
 name = "npurun-core"
-version = "0.1.0-rc.2"
+version = "0.1.0-rc.3"
 dependencies = [
  "anyhow",
  "half",
@@ -1276,7 +1276,7 @@ dependencies = [
 
 [[package]]
 name = "npurun-registry"
-version = "0.1.0-rc.2"
+version = "0.1.0-rc.3"
 dependencies = [
  "anyhow",
  "futures",
@@ -1296,7 +1296,7 @@ dependencies = [
 
 [[package]]
 name = "npurun-server"
-version = "0.1.0-rc.2"
+version = "0.1.0-rc.3"
 dependencies = [
  "anyhow",
  "axum",
@@ -1514,7 +1514,7 @@ dependencies = [
 
 [[package]]
 name = "qnn"
-version = "0.1.0-rc.2"
+version = "0.1.0-rc.3"
 dependencies = [
  "anyhow",
  "qnn-sys",
@@ -1525,7 +1525,7 @@ dependencies = [
 
 [[package]]
 name = "qnn-sys"
-version = "0.1.0-rc.2"
+version = "0.1.0-rc.3"
 dependencies = [
  "bindgen",
 ]

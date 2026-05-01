@@ -4,6 +4,67 @@ All notable changes to npurun will be documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.0-rc.3] — 2026-05-01
+
+### Added
+
+- **`npurun show-hardware`**: probe + report SoC, Hexagon NPU PnP entry,
+  the Hexagon archs the QAIRT SDK supports, and QAIRT + libGenie
+  versions. Does not gate on SoC strings — works on X Elite, X Plus,
+  X 10-core. Differentiates from AnythingLLM's QNN engine (issues
+  #2962, #5129).
+- **`npurun bench --ctx <N>`**: pin a Genie context tier per run;
+  validates against the bundle's compiled `clNNNN` set.
+- **`npurun bench --csv <PATH>`**: append per-(prompt, repeat) rows
+  for tracking per-tier regressions.
+- **`npurun run --addr <host:port> [--auth-token TOK]`**: dispatch the
+  prompt to a running `npurun serve` via `/v1/chat/completions`,
+  skipping the 9-11s cold-load. Reads `NPURUN_SERVE_ADDR`. Validates
+  `/healthz` model match; surfaces 429 immediately.
+- **OpenAI JSON mode passthrough** (`response_format: {"type":
+  "json_object"}`) — augments the system message to instruct the
+  model to emit valid JSON only. Prompt hint, not constrained
+  sampling. Documented limitation in `docs/usage.md`.
+- **Issue template** (YAML form) that requires `npurun show-hardware`
+  + `npurun version` output before submission.
+- **Client cookbook** under `docs/integrations/` covering curl,
+  Python (openai SDK), JavaScript (openai), Open WebUI, AnythingLLM,
+  Continue.dev, and Ollama-flavoured clients. Wired into mdBook
+  SUMMARY under a new "Integrations" section.
+- **Runtime comparison page** (`docs/comparison.md`): npurun NPU vs
+  llama.cpp / Ollama / AnythingLLM / NexaSDK / Phi Silica on the
+  same X-series laptop. Measured numbers for npurun; cited numbers
+  for the others, with sources.
+- **ORT-QNN vs libGenie probe** (`docs/findings_ort_vs_genie.md`):
+  microbenchmark concludes ORT-QNN is ~2× slower than libGenie on
+  this X1E for Phi 3.5 Mini; specula's +19/+39% lift does not
+  transfer here. Probe scripts at `scripts/bench-ort-qnn*.py`.
+- **X-series rebrand**: capability statements across docs, manifests,
+  scripts, README say "Snapdragon X-series" rather than "X Elite".
+  X1E preserved in measurement contexts.
+- **Architecture doc**: documents the no-concurrency-knob decision
+  (one Genie permit, second concurrent request returns 429), citing
+  specula.
+- **Roadmap Wave G**: open follow-ups for embeddings endpoint,
+  smaller chat models in registry, tool calling, constrained-sampling
+  JSON mode, remote registry — each with a concrete next action.
+
+### Fixed
+
+- `crates/npurun-server/src/ollama.rs`: moved `enum StreamItem`
+  before the `date_tests` module to satisfy
+  `clippy::items_after_test_module`.
+
+### Verified
+
+- `cargo fmt --check`, `clippy --workspace --all-targets -D warnings`,
+  `cargo test --workspace --exclude qnn --exclude qnn-sys` (57 tests,
+  0 failures), `mdbook build`.
+- End-to-end smoke on real hardware (X1E80100, libGenie 1.17.0):
+  `/v1/models`, `/v1/chat/completions` (blocking + SSE streaming +
+  JSON mode + multi-turn KV-cache rewind), `/api/tags`,
+  `/api/version`, `/api/chat`, `npurun show-hardware`.
+
 ## [0.1.0-dev] — unreleased
 
 ### Added — runtime

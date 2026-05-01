@@ -28,3 +28,13 @@ labels: compatibility
 ## Notes
 
 <!-- Anything unusual: long load time, memory pressure, output quality issues, etc. -->
+
+## Hardware
+
+<!-- Paste the output of `npurun show-hardware` so others know what
+configuration this report applies to. Compatibility varies across X
+Elite, X Plus, and X 10-core variants. -->
+
+```text
+<!-- npurun show-hardware -->
+```

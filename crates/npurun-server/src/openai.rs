@@ -96,6 +96,19 @@ struct ChatRequest {
     top_p: Option<f32>,
     #[serde(default)]
     max_tokens: Option<u32>,
+    /// OpenAI JSON-mode hint. When `{"type": "json_object"}` is sent,
+    /// the server injects a system instruction asking the model to
+    /// respond with valid JSON only. This is *not* constrained
+    /// sampling — the model can still emit invalid JSON. Clients
+    /// should retry on parse failure, same as against OpenAI.
+    #[serde(default)]
+    response_format: Option<ResponseFormat>,
+}
+
+#[derive(Deserialize)]
+struct ResponseFormat {
+    #[serde(rename = "type")]
+    kind: String,
 }
 
 #[derive(Deserialize, Clone)]
@@ -175,7 +188,7 @@ async fn chat_completions(
     // bundle's chat template and sends it to Genie with
     // `SentenceCode::Rewind`, so multi-turn replay reuses the KV
     // cache prefix instead of re-prefilling from scratch.
-    let messages: Vec<CoreChatMessage> = req
+    let mut messages: Vec<CoreChatMessage> = req
         .messages
         .iter()
         .filter_map(|m| {
@@ -191,6 +204,13 @@ async fn chat_completions(
             })
         })
         .collect();
+
+    if let Some(fmt) = &req.response_format {
+        if fmt.kind == "json_object" {
+            messages = augment_for_json_mode(messages);
+        }
+    }
+
     if !messages.iter().any(|m| m.role == ChatRole::User) {
         return (
             StatusCode::BAD_REQUEST,
@@ -416,6 +436,39 @@ enum StreamItem {
     Error(String),
 }
 
+/// Honour `response_format: {"type": "json_object"}` by augmenting the
+/// system message (or prepending one) with an instruction to emit valid
+/// JSON only. This is a passthrough hint, not constrained sampling —
+/// the model can still produce invalid JSON. Clients should retry on
+/// parse failure, mirroring OpenAI's own JSON-mode contract.
+fn augment_for_json_mode(messages: Vec<CoreChatMessage>) -> Vec<CoreChatMessage> {
+    const HINT: &str = "You must respond with valid JSON only. Do not include explanations, prose, code fences, or markdown — output only the raw JSON object.";
+
+    let mut out = Vec::with_capacity(messages.len() + 1);
+    let mut had_system = false;
+    for msg in messages {
+        if matches!(msg.role, ChatRole::System) && !had_system {
+            had_system = true;
+            out.push(CoreChatMessage {
+                role: ChatRole::System,
+                content: format!("{}\n\n{HINT}", msg.content),
+            });
+        } else {
+            out.push(msg);
+        }
+    }
+    if !had_system {
+        out.insert(
+            0,
+            CoreChatMessage {
+                role: ChatRole::System,
+                content: HINT.to_string(),
+            },
+        );
+    }
+    out
+}
+
 fn unix_now() -> u64 {
     SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
@@ -430,4 +483,49 @@ fn request_id() -> String {
         .map(|d| d.as_nanos())
         .unwrap_or(0);
     format!("{nanos:x}")
+}
+
+#[cfg(test)]
+mod json_mode_tests {
+    use super::{augment_for_json_mode, ChatRole, CoreChatMessage as Msg};
+
+    fn user(s: &str) -> Msg {
+        Msg {
+            role: ChatRole::User,
+            content: s.to_string(),
+        }
+    }
+    fn system(s: &str) -> Msg {
+        Msg {
+            role: ChatRole::System,
+            content: s.to_string(),
+        }
+    }
+
+    #[test]
+    fn prepends_system_when_none_present() {
+        let out = augment_for_json_mode(vec![user("give me an object")]);
+        assert_eq!(out.len(), 2);
+        assert!(matches!(out[0].role, ChatRole::System));
+        assert!(out[0].content.contains("valid JSON"));
+    }
+
+    #[test]
+    fn merges_into_existing_system() {
+        let out = augment_for_json_mode(vec![system("be terse"), user("hi")]);
+        assert_eq!(out.len(), 2);
+        assert!(matches!(out[0].role, ChatRole::System));
+        assert!(out[0].content.starts_with("be terse"));
+        assert!(out[0].content.contains("valid JSON"));
+    }
+
+    #[test]
+    fn merges_into_first_system_only() {
+        // Two system messages is rare but a malformed client could send
+        // it. Augmenting only the first keeps the rest verbatim.
+        let out = augment_for_json_mode(vec![system("first"), system("second"), user("hi")]);
+        assert_eq!(out.len(), 3);
+        assert!(out[0].content.contains("valid JSON"));
+        assert_eq!(out[1].content, "second");
+    }
 }

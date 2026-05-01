@@ -8,6 +8,7 @@
 - [Usage](usage.md)
 - [Handoff & current status](handoff.md)
 - [Benchmarks](benchmarks.md)
+- [Runtime comparison](comparison.md)
 - [Model compatibility](compatibility.md)
 - [Troubleshooting](troubleshooting.md)
 - [Release runbook](release.md)
@@ -15,7 +16,14 @@
 
 # Integrations
 
+- [Overview](integrations/index.md)
+- [curl + raw HTTP](integrations/curl.md)
+- [Python (`openai` SDK)](integrations/python.md)
+- [JavaScript / TypeScript](integrations/javascript.md)
+- [Open WebUI](integrations/open-webui.md)
 - [AnythingLLM](integrations/anythingllm.md)
+- [Continue.dev / VS Code](integrations/continue.md)
+- [Ollama-flavoured clients](integrations/ollama-clients.md)
 
 # Internals
 

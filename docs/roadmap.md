@@ -87,16 +87,21 @@ Goal: turn 2+ of a multi-turn conversation is fast.
 | 6.8 | Self-hosted ARM64 CI runner | open | Enrol the dev laptop (or a dedicated X-series box) as a self-hosted runner with `QNN_SDK_ROOT` set as a secret; flip `release.yml` and `build-arm64-with-qnn` from `if: false`. |
 | 6.9 | Docs site | done | mdBook (`book.toml` + `docs/SUMMARY.md` + `docs/index.md`) builds the existing `docs/*.md` set into a static site. `.github/workflows/docs.yml` runs `mdbook build` on every push to `main` and deploys to GitHub Pages via `actions/deploy-pages`; PRs get build-only verification so a broken `SUMMARY.md` fails the PR. Site goes live at `https://bpbonker.github.io/npurun/` once Settings → Pages → Source is set to "GitHub Actions" once. |
 
+## Wave G — Client breadth (open, captures 2026-05-01 follow-ups)
+
+Goal: anything an OpenAI-compatible client expects, npurun provides.
+Items in this wave are mostly blocked on either Genie-compiled bundles
+that don't exist yet, or on real engineering effort that needs its own
+session.
+
+| # | Item | Status | Next action |
+|---|---|---|---|
+| G1 | `/v1/embeddings` endpoint | blocked on bundle | Convert `bge-small-en-v1.5` (33 M params, 512 ctx) or `e5-small-v2` to a Genie context binary via `npu-convert`. The conversion path exists end-to-end for LLMs; embeddings are a new shape of model and `qai-hub-models` doesn't ship a recipe — needs a direct ONNX → Genie path through the Qualcomm AI Hub UI. Once the bundle exists, the server side is ~half a day: a new `Engine::embed` method that runs prefill-only and returns the pooled hidden state. |
+| G2 | Smaller chat models in registry | blocked on bundles | Add Llama 3.2 1B and Gemma 2 2B (or Llama 3.2 3B) to the built-in registry. Both are public on HF, neither has a Qualcomm-shipped Genie bundle today. Workflow: `npu-convert export <id>` against AI Hub (30–90 min each), then add registry entries with sha256 + URL. Tracked as part of [issue G2 once filed]. |
+| G3 | Tool calling (`tools` + `tool_choice`) | engineering, multi-day | Real tool-calling needs (1) a model-specific chat-template extension that injects tool schemas in the prompt, (2) a streaming-aware parser that detects the model's tool-call syntax and emits OpenAI-shaped `tool_calls`, (3) round-trip handling of `role: "tool"` messages on follow-up turns. Per-model: Llama 3.1 emits `<\|python_tag\|>{...}`, Qwen 2.5 emits `<tool_call>...</tool_call>` XML, Phi 3.5 Mini was not trained for tools (return 400 with a clear message). Gate by model-name match in `npurun-server`; punt to a future commit. |
+| G4 | Constrained-sampling JSON mode | engineering | Current JSON mode (`response_format: {"type": "json_object"}`) is a prompt hint only — see `crates/npurun-server/src/openai.rs::augment_for_json_mode`. Real JSON mode would mask logits during sampling so the model can only emit tokens consistent with valid JSON. Genie exposes a token-by-token streaming API but not a logit-bias hook today; needs Qualcomm-side support or a wrap-and-resample pattern that's ugly enough to think hard about before building. |
+| G5 | Remote model registry (was 5.4) | open | The `npurun pull` registry is still hardcoded in `crates/npurun-registry/src/lib.rs`. Replace with a signed JSON index fetched from a known URL (with the current hardcoded set as the bootstrap fallback). Rough shape: `https://npurun.io/registry/v1.json` → `{ name → { url, sha256, size, qnn_sdk } }`, signed with a project key. |
+
 ## Beyond v0.1.0 — explicitly deferred
 
 - **Snapdragon X2 support** when hardware ships.
-- **Remote registry** (Phase 5.4) — the `npurun pull` index is still hardcoded; a signed JSON index hosted somewhere is the next step toward unbundling that.
-
-## Execution plan for tonight
-
-Crank through **A → B → C → D**, commit each wave separately. If energy
-is still in the tank, do **E**. **F (multi-turn) is the next session's
-headline item** — too big to risk leaving half-done.
-
-Stretch goal: ship a tagged `0.1.0-rc.1` after Wave D so the repo has a
-referenceable release point even without the installer story.

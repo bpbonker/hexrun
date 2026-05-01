@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question or discussion
+    url: https://github.com/bpbonker/npurun/discussions
+    about: For "is this expected?", "how do I…?", or anything that isn't clearly a bug or feature request.
+  - name: Troubleshooting guide
+    url: https://github.com/bpbonker/npurun/blob/main/docs/troubleshooting.md
+    about: Quick checks before filing — silent CPU fallback, version mismatches, build issues.

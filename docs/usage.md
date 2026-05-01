@@ -226,7 +226,7 @@ npurun serve --model phi-3.5-mini --no-warmup
 | Method | Path | Notes |
 |---|---|---|
 | GET  | `/v1/models` | Lists the loaded model under both bare and `:latest` names. |
-| POST | `/v1/chat/completions` | Blocking JSON or SSE streaming when `"stream": true`. |
+| POST | `/v1/chat/completions` | Blocking JSON or SSE streaming when `"stream": true`. Honours `response_format: {"type": "json_object"}` as a system-prompt hint (not constrained sampling — see below). |
 
 #### Ollama-compatible endpoints
 
@@ -245,6 +245,27 @@ npurun serve --model phi-3.5-mini --no-warmup
 |---|---|---|
 | GET | `/healthz` | JSON: status, model, uptime, auth on/off, version. |
 | GET | `/` | Index of available endpoints. |
+
+#### JSON mode (`response_format: json_object`)
+
+When a client sets `"response_format": {"type": "json_object"}` on a
+`/v1/chat/completions` request, npurun augments the system message
+(or prepends one) with an instruction asking the model to emit valid
+JSON only. This is a **prompt hint, not constrained sampling** — the
+model can still produce invalid JSON. Clients should `try { JSON.parse }`
+and retry, exactly as against OpenAI's own JSON mode (which has the
+same caveat in its docs). Constrained-decoding JSON mode is tracked
+in [`roadmap.md`](roadmap.md).
+
+```bash
+curl http://127.0.0.1:11435/v1/chat/completions \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "model": "phi-3.5-mini",
+    "messages": [{"role": "user", "content": "Return a JSON object with name=\"npurun\" and version=\"0.1.0\""}],
+    "response_format": {"type": "json_object"}
+  }'
+```
 
 #### Concurrency, auth, CORS
 

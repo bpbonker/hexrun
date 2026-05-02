@@ -45,7 +45,7 @@ reqwest = { version = "0.12", features = ["stream", "rustls-tls"], default-featu
 futures = "0.3"
 futures-util = "0.3"
 zip = { version = "2", default-features = false, features = ["deflate", "deflate64"] }
-indicatif = "0.17"
+indicatif = "0.18"
 sha2 = "0.10"
 hex = "0.4"
 

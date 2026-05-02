@@ -3,6 +3,53 @@
 Measurements on Snapdragon X Elite (X1E80100, 16 GB LPDDR5x).
 Updated as new data arrives.
 
+## Latest measurements (2026-05-02)
+
+Today's runs cover two things: the VL-7B graph-switching A/B and the
+new `--duration` sustained-stress mode on Qwen3-4B.
+
+### Qwen 2.5 VL-7B graph-switching A/B (`crates/qnn` warm bench)
+
+A/B of the same bundle with and without `enable-graph-switching: true`
+in `genie_config.json`. Three-query warm summary, first query skipped.
+
+| flag | post-TTFT tok/s | TTFT | total / query |
+|---|---:|---:|---:|
+| `enable-graph-switching: false` | **9.1** | **156 ms** | **4.28 s** |
+| `enable-graph-switching: true`  | 9.2 | 551 ms | 4.65 s |
+
+**Surprise:** decode rate is identical within noise, but the flag-on
+case adds ~400 ms to *every* prefill (graph swap penalty). VL-7B's
+text-generator either runs as a single LM graph or its naming is
+already recognised by libGenie's auto-switch heuristic, so the
+override hurts here. Documented in
+[`multi-graph-fix.md`](multi-graph-fix.md). The injection in
+`npurun pull` is currently unconditional; making it bundle-structure-
+aware is a tracked follow-up. Bundle ships ctx tiers `[512, 1024,
+2048]`; max tier (2048) used for both runs.
+
+### Qwen3-4B Instruct 2507 sustained-stress (`npurun bench --duration 60`)
+
+The new `--duration <SECS>` mode cycles the prompt set until the
+wall-clock window elapses, then prints percentiles, std-dev, and a
+first-half-vs-second-half degradation percent — the single number
+that catches thermal throttling on long runs.
+
+| Metric | Value |
+|---|---:|
+| Window | 60 s |
+| Queries completed | 6 |
+| **p50 tok/s** | **14.0** |
+| **p90 tok/s** | **15.1** |
+| First-half-vs-second-half degradation | +1.5 % |
+| Throttling detected | no |
+
+Degradation is *positive* — second half slightly faster than first —
+which is consistent with bundle and KV caches reaching steady state.
+A 60 s window isn't long enough to confirm thermal headroom for
+extended sessions; longer soaks (5–10 min, `--duration 300` or more)
+are the next data point to land.
+
 ## Current results (w4a16 multi-graph era, 2026-05-01)
 
 | Model | Quant | Tool | Steady-state tok/s | TTFT |

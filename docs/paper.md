@@ -48,6 +48,19 @@ NPU. To our knowledge this is the first publicly reproducible recipe
 for general 7B-class LLM inference on the Snapdragon X Elite NPU
 that does not depend on Qualcomm or Microsoft employment.
 
+> **Update — May 2026:** This paper is the original Phase 0
+> writeup, and its measurements describe a self-exported Qwen 2.5 7B
+> w8a16 bundle running at ~1.4–1.9 tok/s. Subsequent w4a16
+> multi-graph bundles (Qwen3-4B Instruct 2507, Qwen 2.5 VL-7B,
+> Phi 3.5 Mini) raised the X1E NPU ceiling to **~14.9 tok/s** under
+> `npurun bench`. The reproducible recipe described here remains
+> valid; the headline performance numbers have moved on. See
+> [`benchmarks.md`](benchmarks.md) for current results and the
+> [README's *Where npurun fits* table](../README.md#where-npurun-fits)
+> for current ecosystem positioning (NexaSDK and AnythingLLM's
+> bundled QNN engine also wrap Genie; the open-Rust-runtime gap is
+> what npurun fills).
+
 ---
 
 ## 1. Introduction

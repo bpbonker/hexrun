@@ -11,12 +11,26 @@ stacks. Each picks a different tradeoff between throughput, energy, UX,
 and openness. The numbers below are roughly what to expect; pick a
 runtime based on which tradeoff matches your use case.
 
+## Qwen3-4B Instruct 2507 (w4a16) on Snapdragon X Elite X1E80100
+
+The current headline comparison: a 4B w4a16 multi-graph bundle.
+
+| Runtime | Backend | Tok/s steady-state | TTFT | Source |
+|---|---|---:|---:|---|
+| **npurun** (`npurun bench`) | NPU (Genie) | **~14.9** | **~120 ms** | [`benchmarks.md`](benchmarks.md) — measured |
+| AnythingLLM bundled QNN | NPU (Genie) | reported similar on supported SoCs | — | Same Genie runtime; broken on X Plus / X 10-core ([#2962](https://github.com/Mintplex-Labs/anything-llm/issues/2962), [#5129](https://github.com/Mintplex-Labs/anything-llm/issues/5129)) |
+| NexaSDK | NPU (Genie) | reported similar | — | Closed runtime, can't independently verify |
+| llama.cpp / Ollama | CPU (Oryon, 12-core) | ~6–10 (cited, smaller-context) | ~500 ms (cited) | Public benchmarks; CPU paths slower than NPU at this size |
+
 ## Phi 3.5 Mini (w4a16 / Q4) on Snapdragon X Elite X1E80100
+
+The original headline comparison from Phase 1, kept because Phi has
+the most-measured energy profile on this hardware.
 
 | Runtime | Backend | Tok/s steady-state | TTFT | Power above idle | J/token | Source |
 |---|---|---:|---:|---:|---:|---|
 | **npurun** | NPU (Genie) | **~11.7** | **194 ms** | **~6.9 W** | **~1.27** | [`benchmarks.md`](benchmarks.md) — measured |
-| AnythingLLM bundled QNN | NPU (Genie) | reported similar | — | — | — | Same Genie runtime under the hood; broken on X Plus / X 10-core ([#2962](https://github.com/Mintplex-Labs/anything-llm/issues/2962), [#5129](https://github.com/Mintplex-Labs/anything-llm/issues/5129)) |
+| AnythingLLM bundled QNN | NPU (Genie) | reported similar | — | — | — | Same Genie runtime; broken on X Plus / X 10-core ([#2962](https://github.com/Mintplex-Labs/anything-llm/issues/2962), [#5129](https://github.com/Mintplex-Labs/anything-llm/issues/5129)) |
 | NexaSDK | NPU (Genie) | reported similar | — | — | — | Closed runtime, can't independently verify |
 | llama.cpp | CPU (Oryon, 12-core) | ~5–8 (cited) | ~500 ms (cited) | ~12–18 W (cited) | ~2.0–3.5 (derived) | Public benchmarks; not yet measured on this machine |
 | Ollama (default backend) | CPU (Oryon, 12-core) | ~5–8 (cited) | ~500 ms (cited) | ~12–18 W (cited) | ~2.0–3.5 (derived) | llama.cpp under the hood |
@@ -34,25 +48,26 @@ runtime based on which tradeoff matches your use case.
   better; on battery, this directly determines how long a chat session
   costs.
 
-## Qwen 2.5 7B (w8a16 / Q4_0_4_8)
+## 7B-class on the NPU: Qwen 2.5 VL-7B (w4a16)
 
 | Runtime | Backend | Tok/s steady-state | Notes |
 |---|---|---:|---|
-| **npurun** (post `poll: true`) | NPU (Genie) | **~1.9** | [`benchmarks.md`](benchmarks.md) — measured |
-| llama.cpp `Q4_0_4_8` | CPU (Oryon) | ~3–5 (cited) | [llama.cpp discussion #8273](https://github.com/ggerganov/llama.cpp/discussions/8273) — needs local confirmation |
+| **npurun** (`npurun bench`) | NPU (Genie) | **~9.1** | Text-only; vision pipeline present but not yet exercised by npurun. [`benchmarks.md`](benchmarks.md) — measured |
+| llama.cpp generic 7B `Q4_K_M` | CPU (Oryon) | ~3–5 (cited) | Public benchmarks |
 
-For 7B-class models, the NPU is currently *slower* than CPU on this
-generation of silicon. Use Phi 3.5 Mini (3.8B) on the NPU for
-interactive chat; reach for llama.cpp / Ollama if you need a 7B
-specifically.
+At 7B-class, the w4a16 multi-graph NPU path now beats the CPU path —
+9.1 tok/s vs 3–5 tok/s. The earlier-generation Qwen 2.5 7B w8a16
+bundle (1.9 tok/s) was the slower legacy path; see *Previous
+iterations* in [`benchmarks.md`](benchmarks.md) for the historical
+context.
 
 ## Picking a runtime
 
 | Want | Pick |
 |---|---|
-| Best tok/s on a 4 GB-class model + lowest battery cost | **npurun** (NPU) |
-| Best tok/s on a 7B-class model | llama.cpp / Ollama (CPU) |
-| Easiest install, biggest model zoo | Ollama |
+| Best tok/s on a 4B-class model + lowest battery cost | **npurun** (Qwen3-4B Instruct 2507 on NPU, ~14.9 tok/s) |
+| Best tok/s on a 7B-class model on this hardware | **npurun** (Qwen 2.5 VL-7B on NPU, ~9.1 tok/s text-only) |
+| Easiest install, biggest GGUF model zoo | Ollama (CPU) |
 | Any X-series silicon (Elite, Plus, X 10-core) | **npurun** — doesn't gate on SoC string |
 | Workspace UI + RAG | AnythingLLM as a *client* against npurun (see [`integrations/anythingllm.md`](integrations/anythingllm.md)) |
 | Microsoft Copilot+ apps | Phi Silica (closed, first-party only) |

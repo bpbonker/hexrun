@@ -3,22 +3,21 @@
 Measurements on Snapdragon X Elite (X1E80100, 16 GB LPDDR5x).
 Updated as new data arrives.
 
-## Current headline (w4a16 multi-graph era, 2026-05-01)
+## Current results (w4a16 multi-graph era, 2026-05-01)
 
 | Model | Quant | Tool | Steady-state tok/s | TTFT |
 |---|---|---|---:|---:|
 | **Qwen3-4B Instruct 2507** | **w4a16** | **`npurun bench`** | **~14.9** | **~120 ms** |
 | Phi 3.5 Mini | w4a16 | `qnn` example | ~11.7 | ~194 ms |
 | Qwen 2.5 VL-7B Instruct (text-only) | w4a16 | `npurun bench` | ~9.1 | ~156 ms |
-| Qwen 2.5 7B | w8a16 | `qnn` example, `poll: true` | ~1.9 | ~659 ms |
 
 **Qwen3-4B Instruct 2507 at ~14.9 tok/s is the current X1E NPU ceiling
-under `npurun bench`.** Three w4a16 bundles in the 4B–7B range now run
-at chat-usable speed — comfortably above human reading pace. The
-remaining slow row is the original Qwen 2.5 7B w8a16 bundle, which
-predates the multi-graph era and is kept here for historical context.
+under `npurun bench`.** All three w4a16 multi-graph bundles in the
+4B–7B range run at chat-pace — comfortably above human reading speed.
 
-Why the lift over the original 1.4 tok/s baseline is roughly 10×:
+The cumulative lift from the very first Phase 0 measurement (Qwen 2.5
+7B w8a16 at 1.4 tok/s — see *Previous iterations* below) to today's
+14.9 tok/s headline is roughly 10×, made up of:
 
 - ~2× from 7B → 4B parameters
 - ~1.3× from w8a16 → w4a16 (less memory bandwidth pressure)
@@ -28,16 +27,63 @@ Why the lift over the original 1.4 tok/s baseline is roughly 10×:
   (without it, decode runs on the prefill graph for a 20× slowdown —
   see [`multi-graph-fix.md`](multi-graph-fix.md))
 
-Running other config tweaks (more CPU cores via `cpu-mask: 0xfff`,
-more `n-threads`, greedy sampling, `sustained_high_performance` perf
-profile) had no measurable benefit and were slightly counter-
-productive. The bottleneck on the original Qwen 7B path was *not* CPU
-orchestration — it was waiting on NPU completion via interrupts.
+Other config tweaks tested in early iterations (more CPU cores via
+`cpu-mask: 0xfff`, more `n-threads`, greedy sampling,
+`sustained_high_performance` perf profile) had no measurable benefit
+and were slightly counter-productive. The bottleneck was never CPU
+orchestration — it was waiting on NPU completion via interrupts, which
+`poll: true` resolves.
 
-## Original Phase 0 measurements (Qwen 2.5 7B w8a16, 2026-04-30)
+## Looking ahead (predictions and in-flight work)
+
+What we expect to land in subsequent measurement passes:
+
+- **Qwen3-4B at 32K context.** All current registry bundles ship with
+  the 4096-ctx tier active. `genie_config.json` exposes `cl4096` /
+  `cl8192` / `cl16384` / `cl32768` tiers in the same physical context
+  bins, so once the runtime can pin a higher tier per request, we
+  expect ~5–10% slower decode at 32K vs 4K (per specula's published
+  per-ctx scaling on similar hardware). Tracked under Wave H1 in
+  [`roadmap.md`](roadmap.md). The local x64 export to *produce* the
+  32K bundle currently OOMs on 16 GB RAM; the cloud-Linux build farm
+  path is the workaround.
+- **Llama 3.1 8B w4a16.** Has a precompiled `DEFAULT_W4A16` checkpoint;
+  same multi-graph format as Qwen3-4B. We expect roughly half the
+  decode rate of Qwen3-4B (so ~6–8 tok/s) just from doubled parameter
+  count and memory-bandwidth pressure — still chat-pace.
+- **Qwen 2.5 7B w4a16.** Once the w4a16 multi-graph variant lands, it
+  should clear the legacy w8a16 row by the same ~5–6× factor we see on
+  Qwen3-4B / VL-7B and replace it in the current results table.
+- **Snapdragon X2 silicon (~80 TOPS, late 2026).** Per Qualcomm
+  marketing and specula's preliminary numbers, X2 should roughly
+  double NPU throughput and may relax the 4096-token context cap.
+  npurun is silicon-agnostic at the runtime layer (libGenie abstracts
+  the chip) so X2 support is an SDK-version bump and a re-bench, not
+  a rewrite.
+
+## Previous iterations
+
+The numbers below are kept for historical context and to show the
+journey from Phase 0 (slow w8a16) to the current w4a16 headline.
+
+### Original Phase 0 measurements (Qwen 2.5 7B w8a16, 2026-04-30)
 
 These are the early numbers from before w4a16 multi-graph bundles
-were available. Kept for archeology and to show the journey.
+were available — when the only NPU-runnable bundle for this hardware
+was a self-exported w8a16 of Qwen 2.5 7B.
+
+> **Context — what we now know:** the 1.4 tok/s baseline below was
+> *not* a fundamental hardware limit. It was the combined cost of
+> w8a16 instead of w4a16, 6 shards instead of 4, and `poll: false`.
+> Subsequent w4a16 multi-graph bundles (Qwen3-4B etc.) clear this row
+> by ~10×. The questions raised in the *What this tells us* / *What
+> we are not yet measuring* subsections below have since been
+> answered: the bottleneck was interrupt-based NPU completion (fixed
+> by `poll: true`) and the 20× decode-graph regression on multi-graph
+> bundles (fixed by `enable-graph-switching: true`); energy is
+> measured at ~1.27 J/token (see *Energy* section below); the 4096
+> context cap is now per-tier configurable in newer bundles. The
+> bullets below reflect what we knew and didn't know **at the time**.
 
 | Model | Quant | Shards | Config | Steady-state tok/s | TTFT |
 |---|---|---:|---|---:|---:|
@@ -45,7 +91,7 @@ were available. Kept for archeology and to show the journey.
 | Qwen 2.5 7B | w8a16 | 6 | + tuned cpu-mask/threads/sampler/perf-profile | 1.3 | 853 ms |
 | Qwen 2.5 7B | w8a16 | 6 | **+ `poll: true`** (single flag) | **1.9** | 659 ms |
 
-## Phase 1 warm-query benchmark (2026-04-30)
+### Phase 1 warm-query benchmark (2026-04-30)
 
 **Setup:**
 - Hardware: Microsoft Surface laptop, Snapdragon X Elite X1E80100, 16 GB shared LPDDR5x, 7.8 GB shared NPU memory
@@ -106,7 +152,7 @@ were available. Kept for archeology and to show the journey.
 - **Long-context behavior.** All our prompts so far are well under 1000 tokens. The 4096-token context cap (hardware-bound) means decode speed near the cap may differ from the small-context behavior we see here.
 - **Tuned config.** The `cpu-mask: 0xe0` and `n-threads: 3` settings come from Qualcomm's template. We tested raising both to no effect — these turn out to be appropriately tuned, not conservative.
 
-## Tuning experiments — what didn't help (2026-04-30)
+### Tuning experiments — what didn't help (2026-04-30)
 
 We tried four config tweaks to Qwen 2.5 7B at once: `cpu-mask: 0xfff`
 (all 12 cores), `n-threads: 8`, greedy sampling (`temp: 0.0`), and
@@ -128,7 +174,7 @@ default. The `qualcomm/ai-hub-apps` tutorial template (which we
 copied for Qwen) does not. **Recommend always setting `poll: true`
 for production NPU inference.**
 
-## Phi 3.5 Mini warm-query benchmark (2026-04-30)
+### Phi 3.5 Mini warm-query benchmark (2026-04-30)
 
 **Setup:** identical methodology to Qwen, but with the Qualcomm-shipped
 Phi 3.5 Mini bundle from `qualcomm/Phi-3.5-mini-instruct` on
@@ -155,20 +201,18 @@ true` already set. Phi 3 chat template wrapping (`<|system|>`/`<|user|>`/`<|assi
 | Aggregate tokens/sec (incl. TTFT) | **11.6** |
 | Aggregate tokens/sec (post-TTFT) | **11.7** |
 
-### What this means
+### What this measurement told us at the time
 
-11.7 tok/s on a 3.8B model with 200 ms TTFT on the NPU is a usable
-chat experience — comparable to what NexaSDK has reported for the same
-hardware. We're not faster than them per-token (we're using the same
-underlying Genie runtime), but we're now on equal footing with the
-closed reference, and we're open source.
+11.7 tok/s on a 3.8B model with 200 ms TTFT on the NPU was the first
+chat-usable result on this hardware — comparable to what NexaSDK
+reports on the same chip. npurun isn't faster than them per-token (we
+use the same underlying Genie runtime); the contribution is parity
+with the closed reference in an open Rust runtime.
 
-The newer w4a16 multi-graph bundles (Qwen3-4B at 14.9 tok/s,
-VL-7B at 9.1 tok/s) push past the Phi headline by a meaningful
-margin — see the headline table above. The original Qwen 2.5 7B
-w8a16 path at 1.9 tok/s remains the legacy slow row; it predates
-both w4a16 and the multi-graph bundle format, so reach for one of
-the newer bundles when you want chat-pace tokens.
+Subsequent w4a16 multi-graph bundles (Qwen3-4B at 14.9 tok/s, VL-7B
+at 9.1 tok/s) cleared the Phi headline once `enable-graph-switching`
+was understood. Phi 3.5 Mini remains in the *Current results* table
+above as a reproducible baseline; the Qwen3-4B row is the headline.
 
 ### Reproduction
 

@@ -7,30 +7,37 @@ This document captures the load-bearing decisions behind npurun.
 ```
                      ┌──────────────────────┐
                      │     npurun-core      │
-                     │   Engine::generate    │
-                     │  (tokenizer, sampler, │
-                     │   KV cache, loop)     │
+                     │    Engine::generate  │
+                     │  (chat template,     │
+                     │   tokenizer, KV       │
+                     │   cache loop)         │
                      └──────────┬────────────┘
                                 │
               ┌─────────────────┴─────────────────┐
               ▼                                   ▼
-       ort path (default)                qnn-direct (feature flag)
-       ─────────────────                 ───────────────────────
-       ort::Session                      qnn::Context::from_binary
-       + QNN ExecutionProvider           load *.qnn_ctx.bin
-       op dispatch + HTP cache           skip ORT entirely
+       Genie (default for LLMs)          ORT-QNN (fallback / non-LLM)
+       ─────────────────────────         ───────────────────────────
+       qnn::Dialog (Rust FFI to          ort::Session + QNN EP
+       libGenie's C API)                 op dispatch + HTP cache
+       loads pre-compiled qnn_dlc        scaffolded; not on the LLM
+       (`qnn_ctx.bin`) bundles           hot path today
+       from Qualcomm AI Hub
 ```
 
-We default to ORT QNN EP because:
+LLMs go through **Genie** because that is the format Qualcomm AI Hub
+emits for chat-shaped models. The hub's LLM toolchain produces
+multi-shard `qnn_dlc` bundles with `genie_config.json` + `tokenizer.json`
++ context binaries; libGenie owns the prefill/decode/sampler loop and
+the KV cache. We wrap its C API directly via `qnn-sys` and `qnn`, so
+cold start is fast and we don't pay for a re-implementation of pieces
+the SDK already provides.
 
-- Op coverage is handled by Microsoft + Qualcomm, not us.
-- HTP context-binary caching is built in (`ep.context_enable=1`).
-- We benefit from upstream improvements without extra work.
-
-We keep `qnn-direct` as an option for:
-
-- Faster cold start when shipping pre-built context binaries.
-- Custom graphs that don't go through ONNX (future).
+The **ORT-QNN path** stays in the workspace as the fallback for non-LLM
+models (vision, embeddings, anything Qualcomm AI Hub exports as raw
+ONNX). The `ort` crate plus the QNN Execution Provider give Op
+coverage handled by Microsoft + Qualcomm and built-in HTP context-
+binary caching. Today nothing on the LLM hot path uses it; it is
+ready for the embedding endpoint and any future vision pipeline.
 
 ## Version pinning
 

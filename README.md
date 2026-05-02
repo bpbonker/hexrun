@@ -22,10 +22,8 @@ into 14.9 tok/s on Qwen3-4B). Verified on hardware.
 > **Status:** working preview; tagged builds incoming. Qwen3-4B
 > Instruct 2507 hits **~14.9 tok/s** under `npurun bench` on the X1E
 > NPU; Phi 3.5 Mini ~11.7 tok/s; Qwen 2.5 VL-7B (w4a16) ~9.1 tok/s
-> text-only. The older Qwen 2.5 7B w8a16 path still runs slow
-> (~1.9 tok/s) — that bundle predates the multi-graph w4a16 era and
-> is kept for comparison. See
-> [`docs/benchmarks.md`](docs/benchmarks.md) for honest numbers.
+> text-only. See [`docs/benchmarks.md`](docs/benchmarks.md) for the
+> raw runs and methodology.
 
 ---
 
@@ -36,13 +34,13 @@ into 14.9 tok/s on Qwen3-4B). Verified on hardware.
 cargo install --path crates/npurun-cli
 
 # Download a model — auto-extracts and writes a manifest.
-npurun pull phi-3.5-mini
+npurun pull qwen3-4b-instruct-2507
 
 # Run a one-shot generation. Streams tokens to stdout.
-npurun run phi-3.5-mini "Tell me a one-line joke about Snapdragon laptops."
+npurun run qwen3-4b-instruct-2507 "Tell me a one-line joke about Snapdragon laptops."
 
 # Or run as an OpenAI/Ollama-compatible HTTP server.
-npurun serve --model phi-3.5-mini
+npurun serve --model qwen3-4b-instruct-2507
 
 # Then point Open WebUI (or any OpenAI/Ollama client) at:
 #   http://localhost:11435
@@ -98,19 +96,16 @@ sits idle on those paths. npurun is the open path that uses it.
 
 | Model | Hardware | Steady-state | TTFT |
 |---|---|---:|---:|
-| Phi 3.5 Mini (w4a16, NPU) | X1E | **~11.7 tok/s** | **~200 ms** |
 | Qwen3-4B Instruct 2507 (w4a16, NPU) | X1E | **~14.9 tok/s** | ~120 ms |
+| Phi 3.5 Mini (w4a16, NPU) | X1E | **~11.7 tok/s** | **~200 ms** |
 | Qwen 2.5 VL-7B Instruct (w4a16, NPU, text-only) | X1E | **~9.1 tok/s** | ~156 ms |
-| Qwen 2.5 7B (w8a16, NPU) | X1E | ~1.9 tok/s | ~660 ms |
 | llama.cpp on the same laptop's CPU (Phi 3.5 Q4) | X1E CPU | ~5–8 tok/s (estimated) | — |
 
-Headline: w4a16 bundles in the 4B–7B range now run at chat-usable
-speeds on the NPU — the older w8a16 Qwen 2.5 7B path is the slow one,
-and the newer Qwen3-4B and VL-7B w4a16 bundles clear it by ~5–6×.
-**~1.27 J/token at ~6.9 W delta** on Phi 3.5 Mini, measured on battery,
-roughly 2–3× more energy-efficient than CPU paths on the same laptop
-(see [`docs/benchmarks.md`](docs/benchmarks.md) for methodology and
-[`docs/findings.md`](docs/findings.md) for why w8a16 was the slow path).
+w4a16 multi-graph bundles in the 4B–7B range run at chat-pace on the
+NPU and beat CPU paths on the same laptop. **~1.27 J/token at ~6.9 W
+delta** on Phi 3.5 Mini, measured on battery — roughly 2–3× more
+energy-efficient than the CPU path
+(see [`docs/benchmarks.md`](docs/benchmarks.md) for methodology).
 
 ## Prerequisites
 
@@ -138,12 +133,11 @@ hosted on Qualcomm's HuggingFace org:
 
 | Name | Size | Verified |
 |---|---:|---|
-| `phi-3.5-mini` | ~2.1 GB | chat-usable, 11.7 tok/s |
 | `qwen3-4b-instruct-2507` | ~2.5 GB | chat-usable, **~14.9 tok/s** (`npurun bench`) — current NPU ceiling |
 | `qwen3-4b` | ~2.5 GB | base model, same multi-graph format as Instruct-2507 |
+| `phi-3.5-mini` | ~2.1 GB | chat-usable, 11.7 tok/s |
 | `qwen-2-5-vl-7b-instruct` | ~4.9 GB | 7B vision-language, **9.1 tok/s** text-only (vision pipeline present, not exercised by npurun yet) |
 | `llama-v3-1-8b-instruct` | ~4.5 GB | not precompiled by Qualcomm — self-compile only |
-| `qwen-2-5-7b` | ~4.3 GB | not precompiled; local w8a16 variant runs at ~0.9 tok/s |
 
 > **Multi-graph bundles need a config flag.** Bundles published from
 > late 2025 onwards (Qwen3, etc.) ship with `prompt_ar128_*` /
@@ -156,8 +150,8 @@ hosted on Qualcomm's HuggingFace org:
 > still gets injected today and costs ~400 ms TTFT on that bundle;
 > follow-up to make injection conditional.)
 
-A remote registry beyond the hardcoded list is planned (Phase 5). For
-adding models that aren't in the built-in registry today, see
+A remote registry (signed JSON index) is on the roadmap. For adding
+models that aren't in the built-in registry today, see
 [`python/npu-convert/`](python/npu-convert/) — a Python sidecar that
 takes any Genie bundle (downloaded or built locally) and writes the
 `npurun.json` manifest the runtime needs.
@@ -226,7 +220,7 @@ The full docs are also rendered as a [browsable site with search](https://bpbonk
 - [`docs/release.md`](docs/release.md) — copy-paste release runbook (build, tag, sign, winget)
 - [`docs/roadmap.md`](docs/roadmap.md) — what's left for v0.1.0
 
-## Status / roadmap (April 2026)
+## Status / roadmap (May 2026)
 
 **Shipped:**
 

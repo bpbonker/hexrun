@@ -87,10 +87,27 @@ If you're side-loading a bundle (manually placing files in
 
 Qualcomm publishes precompiled bundles for a small set of models on
 their public S3 bucket. Before this fix, only Phi 3.5 Mini was usable
-end-to-end on npurun — every other available bundle (Qwen3-4B,
-Qwen3-4B-Instruct-2507, Qwen2.5-VL-7B) was bottlenecked at <1 tok/s
-even though the hardware was fully capable.
+end-to-end on npurun — every other Qwen3-family bundle was
+bottlenecked at <1 tok/s even though the hardware was fully capable.
 
 After the fix, `npurun pull qwen3-4b-instruct-2507` produces a
-working chat bundle that runs at NPU ceiling speed. Same applies to
-the other multi-graph bundles in the registry.
+working chat bundle that runs at NPU ceiling speed.
+
+## Caveat: not every bundle needs the flag
+
+Measured on Qwen 2.5 VL-7B w4a16 (a multi-node bundle with
+imageEncoder + lutEncoder + textGenerator):
+
+| Config | tok/s post-TTFT | TTFT |
+|---|---:|---:|
+| flag OFF | 9.1 | 156 ms |
+| flag ON  | 9.2 | 551 ms |
+
+Decode rate is identical; flag-on adds ~400 ms to every prefill (the
+graph swap penalty). VL-7B's LM is either single-graph or names its
+graphs in a way libGenie's auto-switch heuristic recognises.
+
+The current patcher injects the flag unconditionally. That's a small
+TTFT regression on VL-7B and any future bundle in the same shape. A
+follow-up should make injection conditional on actually finding
+`prompt_*` / `token_*` in the bundle's graph names.

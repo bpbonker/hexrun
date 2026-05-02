@@ -19,7 +19,12 @@ All notable changes to npurun will be documented here. Format follows
 - **Registry**: three new entries with verified-working precompiled
   bundles — `qwen3-4b-instruct-2507` (4B, 14.9 tok/s),
   `qwen3-4b` (base), `qwen-2-5-vl-7b-instruct` (7B vision-language,
-  text-only inference path).
+  9.1 tok/s text-only).
+- **`npurun bench --duration <SECS>`**: sustained-stress mode. Cycles
+  the prompt set until the wall-clock window elapses, then prints
+  percentiles, std-dev, and a first-half-vs-second-half degradation
+  percent — the single number that catches thermal throttling on
+  long runs.
 
 ## [0.1.0-rc.3] — 2026-05-01
 

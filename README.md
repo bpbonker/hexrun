@@ -111,18 +111,20 @@ hosted on Qualcomm's HuggingFace org:
 | `phi-3.5-mini` | ~2.1 GB | chat-usable, 11.7 tok/s |
 | `qwen3-4b-instruct-2507` | ~2.5 GB | chat-usable, **11.7 tok/s** (matches Phi NPU ceiling) |
 | `qwen3-4b` | ~2.5 GB | base model, same multi-graph format as Instruct-2507 |
-| `qwen-2-5-vl-7b-instruct` | ~4.0 GB | 7B vision-language; npurun feeds text only |
+| `qwen-2-5-vl-7b-instruct` | ~4.9 GB | 7B vision-language, **9.1 tok/s** text-only (vision pipeline present, not exercised by npurun yet) |
 | `llama-v3-1-8b-instruct` | ~4.5 GB | not precompiled by Qualcomm — self-compile only |
 | `qwen-2-5-7b` | ~4.3 GB | not precompiled; local w8a16 variant runs at ~0.9 tok/s |
 
 > **Multi-graph bundles need a config flag.** Bundles published from
-> late 2025 onwards (Qwen3, Qwen 2.5 VL, etc.) ship with
-> `prompt_ar128_*` / `token_ar1_*` graph names. libGenie 1.17.0's
-> auto-switch heuristic doesn't recognise this naming, so without
-> `enable-graph-switching: true` in `genie_config.json` the runtime
-> executes the prefill graph for every decode token and throughput
-> collapses by ~20×. `npurun pull` injects this flag automatically
-> after extraction; if you side-load a bundle, set it yourself.
+> late 2025 onwards (Qwen3, etc.) ship with `prompt_ar128_*` /
+> `token_ar1_*` graph names. libGenie 1.17.0's auto-switch heuristic
+> doesn't recognise this naming, so without `enable-graph-switching:
+> true` in `genie_config.json` the runtime executes the prefill graph
+> for every decode token and throughput collapses by ~20×. `npurun
+> pull` injects this flag automatically after extraction. (Qwen 2.5
+> VL-7B is structurally different and doesn't need the flag — it
+> still gets injected today and costs ~400 ms TTFT on that bundle;
+> follow-up to make injection conditional.)
 
 A remote registry beyond the hardcoded list is planned (Phase 5). For
 adding models that aren't in the built-in registry today, see

@@ -57,3 +57,6 @@ qnn_profile_*.csv
 
 # mdBook output (built by .github/workflows/docs.yml)
 /book/
+
+# Ad-hoc verifier / bench logs
+/logs/

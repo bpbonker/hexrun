@@ -102,6 +102,32 @@ session.
 | G4 | Constrained-sampling JSON mode | engineering | Current JSON mode (`response_format: {"type": "json_object"}`) is a prompt hint only — see `crates/npurun-server/src/openai.rs::augment_for_json_mode`. Real JSON mode would mask logits during sampling so the model can only emit tokens consistent with valid JSON. Genie exposes a token-by-token streaming API but not a logit-bias hook today; needs Qualcomm-side support or a wrap-and-resample pattern that's ugly enough to think hard about before building. |
 | G5 | Remote model registry (was 5.4) | open | The `npurun pull` registry is still hardcoded in `crates/npurun-registry/src/lib.rs`. Replace with a signed JSON index fetched from a known URL (with the current hardcoded set as the bootstrap fallback). Rough shape: `https://npurun.io/registry/v1.json` → `{ name → { url, sha256, size, qnn_sdk } }`, signed with a project key. |
 
+## Wave H — Bigger contexts and bigger models (next stage, in flight 2026-05-02)
+
+Goal: push beyond the 4096-context default that all current registry
+bundles ship with, and validate the export pipeline against bigger
+weights.
+
+| # | Item | Status | Notes |
+|---|---|---|---|
+| H1 | Qwen3-4B Instruct 2507 at 32K context | blocked on memory | Local x64 export OOMs during ONNX consolidation: `tensor.raw_data = data_file.read()` fails on the 17 GB unpacked w4a16 blob even with 16 GB RAM + 40 GB pagefile. Path forward is the cloud Linux x86 build farm, see Wave I. The 17.7 GB asset itself downloaded fine via `scripts/qwen3-4b-download-loop.sh` (resilient curl resume loop). |
+| H2 | Llama 3.1 8B Instruct w4a16 | queued | Has `DEFAULT_W4A16` prequantized checkpoint, no AIMET-ONNX needed. Same export path as Qwen3-4B but bigger weights — will OOM harder on the 16 GB laptop. Bundle target: 4 ctx tiers (4096, 8192, 16384, 32768). Then registry entry + bench + multi-graph injection check. |
+| H3 | Qwen 2.5 7B w4a16 (replace the legacy w8a16 row) | gated on bundle | The current registry's `qwen-2-5-7b` is an old w8a16 self-export (~0.9–1.9 tok/s). Once a w4a16 multi-graph variant is available — either a Qualcomm precompiled or a local export — replace and retire the slow row. |
+| H4 | More context tiers in registry manifests | engineering | Pull-time, the manifest currently records a single `context_length`. Update `npurun-registry::Manifest` and `npurun pull` to record the full `clNNNN` tier set baked into the bundle so `npurun bench --ctx <N>` can pin against it without re-parsing `genie_config.json`. |
+
+## Wave I — Cloud Linux x86 build farm (open)
+
+Goal: a clean separation between the Windows-on-ARM laptop (where
+npurun runs) and the Linux x86 box (where exports get built). The
+laptop is too memory-constrained for >4B w4a16 ONNX consolidation; AI
+Hub Models' AIMET pipeline is Linux-only anyway.
+
+| # | Item | Status | Notes |
+|---|---|---|---|
+| I1 | Portable export bundle (`scripts/wsl-export/`) | starter shipped 2026-05-02 | `setup.sh` builds a Python 3.10 venv with the discovered pin set (transformers 4.51.0, torch 2.4.1, sentencepiece, accelerate, conditional aimet-onnx). `run-export.sh` wraps `python -m qai_hub_models.models.<id>.export` with the standard flag set. Drop the dir on a WSL2 Ubuntu 22.04 box (or any x86 Linux) with `qai-hub configure` set, run setup once, run exports many times. |
+| I2 | Self-hosted Linux x86 GitHub Actions runner | open | Pair with the existing Wave 6.8 (self-hosted ARM64 runner) so CI can both build (`linux-x86`) and validate-on-target (`win-arm64`). |
+| I3 | Bundle artifact upload to a CDN | open | Once exports succeed on the build farm, upload the `.zip` bundles to a CDN (or a private S3) with sha256 manifests so `npurun pull` can fetch them. Pairs with Wave G5 (remote registry). |
+
 ## Beyond v0.1.0 — explicitly deferred
 
 - **Snapdragon X2 support** when hardware ships.

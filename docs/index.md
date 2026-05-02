@@ -19,8 +19,9 @@ deeper reference material that supports them.
   picture of what works today, then **[Roadmap](roadmap.md)** for what's left
   before v0.1.0.
 - Curious about the numbers? **[Benchmarks](benchmarks.md)** has the raw
-  measurements (Phi 3.5 Mini at ~11.7 tok/s and ~1.27 J/token on the X1E
-  NPU) and the methodology behind them.
+  measurements (Qwen3-4B at ~14.9 tok/s, Phi 3.5 Mini at ~11.7 tok/s with
+  ~1.27 J/token, VL-7B at ~9.1 tok/s text-only — all on the X1E NPU) and
+  the methodology behind them.
 - Hit a wall during setup? **[Troubleshooting](troubleshooting.md)** is a
   growing list of every failure mode we've seen and the fix.
 - Cutting a release? **[Release runbook](release.md)** is the literal

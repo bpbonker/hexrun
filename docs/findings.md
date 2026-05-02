@@ -4,6 +4,18 @@
 **Status:** end-to-end working, reproducible, ~135 minutes from a clean machine to first NPU-generated token (excluding the Visual Studio install, which we'll always have to assume is there).
 **Hardware:** Surface laptop with Snapdragon X Elite (X1E80100), 16 GB shared LPDDR5x, 7.8 GB shared NPU memory ceiling.
 
+> **Update — May 2026:** This document is the original Phase 0
+> writeup. It analyses the **Qwen 2.5 7B w8a16** path that produced
+> ~1.4–1.9 tok/s. Soon after publication, w4a16 multi-graph bundles
+> became available (Qwen3-4B Instruct 2507, Qwen 2.5 VL-7B) and
+> changed the picture: current numbers are **~14.9 tok/s on Qwen3-4B**
+> and ~9.1 tok/s on VL-7B — chat-pace tokens that comfortably beat
+> CPU paths on the same hardware. See [`benchmarks.md`](benchmarks.md)
+> for the current headline. The Phase 0 analysis below remains
+> accurate for the w8a16 path it discusses; the speculative "next
+> steps" near the end (smaller models, w4a16, fewer shards) all
+> turned out to be load-bearing wins.
+
 ---
 
 ## TL;DR
@@ -221,13 +233,21 @@ make 7B genuinely difficult to run efficiently.
    shards may dominate decode time; some Genie configs use fewer larger
    shards.
 
-### What this means honestly
+### What this means (Phase 0, w8a16 path)
 
-For interactive chat at our current numbers, this is **slower than the
-CPU path**. That's the part we can't paper over. For a properly
-performant deployment on this hardware today you would still pick CPU
-inference via Ollama unless you cared specifically about energy
-efficiency, NPU offload, or future tunability.
+> **Update — May 2026:** This subsection's conclusion ("slower than
+> the CPU path", "you would still pick Ollama") was true of the
+> w8a16 path measured here. It is **no longer true** of the project
+> overall — Qwen3-4B w4a16 at 14.9 tok/s and Phi 3.5 Mini w4a16 at
+> 11.7 tok/s both beat the CPU baseline comfortably. The Phase 0
+> analysis below remains accurate for the specific Qwen 2.5 7B
+> w8a16 bundle it discusses.
+
+For interactive chat at the Phase 0 numbers, this was **slower than
+the CPU path**. That's the part we couldn't paper over at the time.
+For a properly performant deployment on Phase 0 alone you would still
+pick CPU inference via Ollama unless you cared specifically about
+energy efficiency, NPU offload, or future tunability.
 
 | Metric | Value | Notes |
 |---|---|---|
@@ -443,7 +463,17 @@ acceleration:
 
 ---
 
-## Meaningful contribution to Windows-on-ARM, honestly assessed
+## Meaningful contribution to Windows-on-ARM (Phase 0 self-assessment)
+
+> **Update — May 2026:** This Phase 0 self-assessment was deliberately
+> conservative — at the time, the only measured number was Qwen 2.5 7B
+> w8a16 at ~1.4 tok/s, slower than CPU. Several of the speculative
+> "fastest path forward" items below subsequently landed and became
+> load-bearing wins: Phi 3.5 Mini at 11.7 tok/s, Qwen3-4B at 14.9
+> tok/s, w4a16 + multi-graph bundle support, the
+> `enable-graph-switching` fix. The contribution today is meaningfully
+> stronger than what's described here; this section is preserved as
+> the original honest snapshot.
 
 After measuring, the contribution looks like this:
 

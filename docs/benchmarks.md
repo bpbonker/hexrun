@@ -1,31 +1,49 @@
 # Benchmarks
 
-Honest measurements. Updated as new data arrives.
+Measurements on Snapdragon X Elite (X1E80100, 16 GB LPDDR5x).
+Updated as new data arrives.
 
-## Headline (post-tuning, 2026-04-30)
+## Current headline (w4a16 multi-graph era, 2026-05-01)
+
+| Model | Quant | Tool | Steady-state tok/s | TTFT |
+|---|---|---|---:|---:|
+| **Qwen3-4B Instruct 2507** | **w4a16** | **`npurun bench`** | **~14.9** | **~120 ms** |
+| Phi 3.5 Mini | w4a16 | `qnn` example | ~11.7 | ~194 ms |
+| Qwen 2.5 VL-7B Instruct (text-only) | w4a16 | `npurun bench` | ~9.1 | ~156 ms |
+| Qwen 2.5 7B | w8a16 | `qnn` example, `poll: true` | ~1.9 | ~659 ms |
+
+**Qwen3-4B Instruct 2507 at ~14.9 tok/s is the current X1E NPU ceiling
+under `npurun bench`.** Three w4a16 bundles in the 4B–7B range now run
+at chat-usable speed — comfortably above human reading pace. The
+remaining slow row is the original Qwen 2.5 7B w8a16 bundle, which
+predates the multi-graph era and is kept here for historical context.
+
+Why the lift over the original 1.4 tok/s baseline is roughly 10×:
+
+- ~2× from 7B → 4B parameters
+- ~1.3× from w8a16 → w4a16 (less memory bandwidth pressure)
+- ~1.2× from 6 → 4 shards (fewer per-token context transitions)
+- ~1.4× from `poll: true` (CPU-side polling instead of interrupt waits)
+- ~1.3× from `enable-graph-switching: true` on multi-graph bundles
+  (without it, decode runs on the prefill graph for a 20× slowdown —
+  see [`multi-graph-fix.md`](multi-graph-fix.md))
+
+Running other config tweaks (more CPU cores via `cpu-mask: 0xfff`,
+more `n-threads`, greedy sampling, `sustained_high_performance` perf
+profile) had no measurable benefit and were slightly counter-
+productive. The bottleneck on the original Qwen 7B path was *not* CPU
+orchestration — it was waiting on NPU completion via interrupts.
+
+## Original Phase 0 measurements (Qwen 2.5 7B w8a16, 2026-04-30)
+
+These are the early numbers from before w4a16 multi-graph bundles
+were available. Kept for archeology and to show the journey.
 
 | Model | Quant | Shards | Config | Steady-state tok/s | TTFT |
 |---|---|---:|---|---:|---:|
 | Qwen 2.5 7B | w8a16 | 6 | adapted from tutorial template, `poll: false` | 1.4 | 792 ms |
 | Qwen 2.5 7B | w8a16 | 6 | + tuned cpu-mask/threads/sampler/perf-profile | 1.3 | 853 ms |
 | Qwen 2.5 7B | w8a16 | 6 | **+ `poll: true`** (single flag) | **1.9** | 659 ms |
-| **Phi 3.5 Mini** | **w4a16** | **4** | **Qualcomm-shipped (poll: true)** | **11.7** | **194 ms** |
-
-**Phi 3.5 Mini at 11.7 tok/s on the Snapdragon X Elite NPU is in the
-"actually usable for interactive chat" range** (roughly human speech
-speed). The lift over Qwen 7B is ~6×, attributable to:
-
-- ~2× from going 7B → 3.8B parameters,
-- ~1.3× from w8a16 → w4a16 (less memory bandwidth pressure),
-- ~1.2× from 6 → 4 shards (fewer per-token context transitions),
-- ~1.4× from Qualcomm's properly-tuned config (most importantly, `poll: true`).
-
-Running the user's other config tweaks (more CPU cores via `cpu-mask:
-0xfff`, more `n-threads`, greedy sampling, `sustained_high_performance`
-perf profile) had no measurable benefit and were slightly counter-
-productive. The bottleneck on Qwen 7B was *not* CPU orchestration; it
-was the cost of waiting on NPU completion via interrupts (which `poll:
-true` replaces with a tight CPU-side polling loop).
 
 ## Phase 1 warm-query benchmark (2026-04-30)
 
@@ -145,11 +163,12 @@ hardware. We're not faster than them per-token (we're using the same
 underlying Genie runtime), but we're now on equal footing with the
 closed reference, and we're open source.
 
-For Qwen 2.5 7B at 1.9 tok/s post-tuning, npurun is still slower than
-CPU paths for chat (you'd reach for Ollama). The 7B regime needs
-either a better-tuned compile (currently gated by Qualcomm) or
-acceptance that 7B is a "longer answer, less latency-sensitive" mode
-on this hardware generation.
+The newer w4a16 multi-graph bundles (Qwen3-4B at 14.9 tok/s,
+VL-7B at 9.1 tok/s) push past the Phi headline by a meaningful
+margin — see the headline table above. The original Qwen 2.5 7B
+w8a16 path at 1.9 tok/s remains the legacy slow row; it predates
+both w4a16 and the multi-graph bundle format, so reach for one of
+the newer bundles when you want chat-pace tokens.
 
 ### Reproduction
 

@@ -34,16 +34,21 @@ Ollama-compatible HTTP server.
 
 End-to-end on this laptop:
 
+- **Qwen3-4B Instruct 2507** (w4a16, multi-graph): **~14.9 tok/s** steady-state
+  under `npurun bench`, ~120 ms TTFT. Current NPU ceiling on X1E.
 - **Phi 3.5 Mini** (w4a16, Qualcomm-shipped bundle): ~11.7 tok/s steady-state
-  post-TTFT, 194 ms TTFT. Chat-usable.
-- **Qwen 2.5 7B** (w8a16, our Phase 0 export): ~1.9 tok/s steady-state with
-  `poll: true`. Slower than CPU paths today; the 7B regime is hard on this
-  generation of silicon.
+  post-TTFT, ~194 ms TTFT. Chat-usable; the original headline.
+- **Qwen 2.5 VL-7B Instruct** (w4a16, multi-graph): ~9.1 tok/s text-only,
+  ~156 ms TTFT. Vision pipeline present in the bundle but not exercised yet.
+- **Qwen 2.5 7B** (w8a16, our original Phase 0 export): ~1.9 tok/s with
+  `poll: true`. The legacy slow path — predates the multi-graph w4a16
+  bundles, kept around for comparison and historical context.
 - HTTP server (OpenAI + Ollama compat) verified end-to-end with SSE
   streaming, NDJSON streaming, bearer auth (200/401/200 ladder), CORS
   preflight, HTTP 429 on concurrent requests, rich `/healthz`.
-- `npurun pull phi-3.5-mini` downloads ~2 GB, sha256-verifies, extracts,
-  auto-writes manifest. Resumable via HTTP `Range`.
+- `npurun pull <model>` downloads, sha256-verifies, extracts,
+  auto-writes manifest, and injects `enable-graph-switching` for
+  multi-graph bundles. Resumable via HTTP `Range`.
 
 All three NPU-usage proofs agreed:
 

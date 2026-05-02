@@ -2,11 +2,22 @@
 
 **NPU-first local LLM runtime for Snapdragon X-series Windows-on-ARM laptops.**
 
-Today, popular open-source LLM tools (Ollama, llama.cpp, LM Studio,
-text-generation-webui) run CPU-only on Snapdragon X laptops. The
-45 TOPS Hexagon NPU sits idle. npurun fixes that. Native Rust runtime
-on top of Qualcomm's Genie SDK, an Ollama-class CLI, and an
-OpenAI/Ollama-compatible HTTP server. Verified on hardware.
+The 45 TOPS Hexagon NPU on Snapdragon X laptops is real and chat-pace
+usable. The open ecosystem just doesn't reach it: Ollama, llama.cpp,
+LM Studio, and text-generation-webui all run CPU-only on these chips.
+Other runtimes *do* hit the NPU — NexaSDK and AnythingLLM's bundled
+QNN engine both wrap the same underlying Qualcomm Genie SDK, and
+Microsoft's Phi Silica targets it from first-party Copilot apps —
+but each is closed-source, gated, or SoC-string-pinned in ways that
+make them awkward to embed or extend.
+
+**npurun is the open Rust path.** Same Genie SDK that Qualcomm's own
+tooling uses, exposed through an Ollama-class CLI (`pull` / `run` /
+`serve` / `bench` / `ps`) and an OpenAI- and Ollama-compatible HTTP
+server. Multi-model registry with sha256-verified pulls, multi-turn
+chat via Genie's KV-cache rewind, automatic multi-graph bundle
+support (the `enable-graph-switching` injection that turns 0.6 tok/s
+into 14.9 tok/s on Qwen3-4B). Verified on hardware.
 
 > **Status:** working preview; tagged builds incoming. Qwen3-4B
 > Instruct 2507 hits **~14.9 tok/s** under `npurun bench` on the X1E
@@ -55,26 +66,40 @@ full operational state.
 | `npurun ps` | Probe a running `npurun serve` and print model + uptime + auth state. |
 | `npurun version` | Print npurun, libGenie, and QAIRT SDK versions. |
 
-## Why this exists
+## Where npurun fits
 
-| Tool | NPU support on Snapdragon X-series (Apr 2026) |
-|---|---|
-| Ollama | CPU only ([#5360](https://github.com/ollama/ollama/issues/5360)) |
-| llama.cpp | QNN backend stalled ([#8273](https://github.com/ggml-org/llama.cpp/discussions/8273)) |
-| LM Studio | CPU/GPU only ([#30](https://github.com/lmstudio-ai/lms/issues/30)) |
-| text-generation-webui | none ([#6298](https://github.com/oobabooga/text-generation-webui/issues/6298)) |
-| Microsoft Phi Silica | NPU, but locked to first-party Copilot apps |
-| NexaSDK | NPU, but closed CLI |
-| **npurun** | NPU, open Rust, embeddable |
+| Tool | NPU on Snapdragon X-series (May 2026) | License | Notes |
+|---|---|---|---|
+| Ollama | CPU only ([#5360](https://github.com/ollama/ollama/issues/5360)) | open | Default for most users; misses the NPU. |
+| llama.cpp | QNN backend stalled ([#8273](https://github.com/ggml-org/llama.cpp/discussions/8273)) | open | GGUF can't currently target the Hexagon NPU. |
+| LM Studio | CPU/GPU only ([#30](https://github.com/lmstudio-ai/lms/issues/30)) | closed | — |
+| text-generation-webui | none ([#6298](https://github.com/oobabooga/text-generation-webui/issues/6298)) | open | — |
+| Microsoft Phi Silica | NPU | closed (Windows AI APIs) | Locked to first-party Copilot+ apps; specific Microsoft-shipped models. |
+| NexaSDK | NPU (Genie under the hood) | closed CLI | Working NPU runtime, but not embeddable / inspectable. |
+| AnythingLLM bundled QNN engine | NPU (Genie under the hood) | open frontend, closed engine | Works on X Elite; broken on X Plus / X 10-core where it pins on SoC marketing strings ([#2962](https://github.com/Mintplex-Labs/anything-llm/issues/2962), [#5129](https://github.com/Mintplex-Labs/anything-llm/issues/5129)). |
+| **npurun** | NPU (Genie, native Rust FFI) | MIT / Apache-2.0 | Open Rust crate, embeddable as a library; doesn't gate on SoC strings (probes `Win32_VideoController` for the Hexagon NPU); ships an OpenAI- and Ollama-compatible HTTP server; multi-graph bundle support; multi-turn chat via Genie KV-cache rewind. |
 
-The table above is specifically about **NPU** acceleration — most of these tools run fine on this laptop's CPU (and llama.cpp also runs on the Adreno GPU via Vulkan/OpenCL backends). The 45 TOPS Hexagon NPU is the part that stays idle. npurun fills that gap.
+What npurun is **not**: a faster Genie. Per-token decode speed comes
+from libGenie itself — the same underlying runtime NexaSDK and
+AnythingLLM use. What npurun adds is the open, embeddable, scriptable
+surface around it: a Rust crate (`npurun-core`) you can pull into your
+own project, an Ollama-class CLI for ad-hoc use, an
+OpenAI/Ollama-shaped HTTP server for any client that already speaks
+those APIs, and a registry/pull pipeline so users don't have to
+hand-assemble Genie context bundles.
 
-## Performance, honestly
+The table also omits CPU/GPU paths because that's not the gap. Most
+of these tools run fine on the Snapdragon X CPU — llama.cpp also runs
+on the Adreno GPU via Vulkan/OpenCL — and that's the right pick if you
+want raw GGUF flexibility. The 45 TOPS Hexagon NPU is the part that
+sits idle on those paths. npurun is the open path that uses it.
+
+## Performance on real hardware
 
 | Model | Hardware | Steady-state | TTFT |
 |---|---|---:|---:|
 | Phi 3.5 Mini (w4a16, NPU) | X1E | **~11.7 tok/s** | **~200 ms** |
-| Qwen3-4B Instruct 2507 (w4a16, NPU) | X1E | **~11.7 tok/s** | ~120 ms |
+| Qwen3-4B Instruct 2507 (w4a16, NPU) | X1E | **~14.9 tok/s** | ~120 ms |
 | Qwen 2.5 VL-7B Instruct (w4a16, NPU, text-only) | X1E | **~9.1 tok/s** | ~156 ms |
 | Qwen 2.5 7B (w8a16, NPU) | X1E | ~1.9 tok/s | ~660 ms |
 | llama.cpp on the same laptop's CPU (Phi 3.5 Q4) | X1E CPU | ~5–8 tok/s (estimated) | — |
@@ -114,7 +139,7 @@ hosted on Qualcomm's HuggingFace org:
 | Name | Size | Verified |
 |---|---:|---|
 | `phi-3.5-mini` | ~2.1 GB | chat-usable, 11.7 tok/s |
-| `qwen3-4b-instruct-2507` | ~2.5 GB | chat-usable, **11.7 tok/s** (matches Phi NPU ceiling) |
+| `qwen3-4b-instruct-2507` | ~2.5 GB | chat-usable, **~14.9 tok/s** (`npurun bench`) — current NPU ceiling |
 | `qwen3-4b` | ~2.5 GB | base model, same multi-graph format as Instruct-2507 |
 | `qwen-2-5-vl-7b-instruct` | ~4.9 GB | 7B vision-language, **9.1 tok/s** text-only (vision pipeline present, not exercised by npurun yet) |
 | `llama-v3-1-8b-instruct` | ~4.5 GB | not precompiled by Qualcomm — self-compile only |

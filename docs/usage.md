@@ -30,6 +30,8 @@ zip, extracts, and writes `npurun.json`. Resumable via HTTP `Range` if
 interrupted.
 
 ```powershell
+npurun pull qwen3-4b-instruct-2507   # ~2.5 GB, ~14.9 tok/s on X1E NPU
+# or:
 npurun pull phi-3.5-mini             # ~2.1 GB, ~11.7 tok/s on X1E NPU
 npurun pull llama-v3-1-8b-instruct   # ~4.5 GB
 npurun pull qwen-2-5-7b              # ~4.3 GB, w4a16
@@ -116,8 +118,8 @@ npurun bench phi-3.5-mini --repeats 3          # 4 prompts × 3 = 12 queries
 npurun bench phi-3.5-mini --prompt "hello" --repeats 5
 ```
 
-Numbers in the README's *Performance, honestly* table came from this
-exact harness. See [`benchmarks.md`](benchmarks.md) for raw runs.
+Numbers in the README's *Performance on real hardware* table come from
+this exact harness. See [`benchmarks.md`](benchmarks.md) for raw runs.
 
 #### Pinning the context tier with `--ctx`
 

@@ -89,7 +89,11 @@ fn check(code: sys::Genie_Status_t) -> Result<(), GenieError> {
     if code == 0 {
         Ok(())
     } else if code > 0 {
-        debug!(code, name = status_name(code), "Genie returned a warning; treating as success");
+        debug!(
+            code,
+            name = status_name(code),
+            "Genie returned a warning; treating as success"
+        );
         Ok(())
     } else {
         Err(GenieError::Status {

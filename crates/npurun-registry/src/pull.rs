@@ -80,6 +80,17 @@ where
     let bundle_root = extract_zip(&zip_path, &model_dir.join("bundle"))?;
     let _ = std::fs::remove_file(&zip_path);
 
+    // Compatibility shim for newer multi-graph bundles. Bundles exported
+    // after late-2025 ship with `prompt_ar128_*` / `token_ar1_*` graph
+    // names that libGenie 1.17.0's auto-switch heuristic doesn't match —
+    // without the explicit `enable-graph-switching` flag, decode silently
+    // runs on the prefill graph and throughput collapses by ~20×.
+    // Idempotent if the flag is already present or the bundle doesn't
+    // need it.
+    if let Err(e) = patch_genie_config_for_graph_switching(&bundle_root) {
+        tracing::warn!(error = %e, "could not patch genie_config for graph switching; bundle may run slowly on multi-graph models");
+    }
+
     write_manifest(known, &model_dir, &bundle_root, &sha256)?;
 
     on_progress(ProgressEvent::Done {
@@ -389,6 +400,63 @@ fn write_manifest(
     Ok(())
 }
 
+/// Inject `enable-graph-switching: true` into the bundle's
+/// `genie_config.json` (and any companion `text-generator.json`) when
+/// the bundle ships multi-graph context binaries with `prompt_*` /
+/// `token_*` prefixed graph names. libGenie 1.17.0's auto-switch
+/// heuristic only recognises the older `ar128_*` / `ar1_*` naming;
+/// without this flag the runtime executes the prefill graph for every
+/// decode token, causing a ~20× throughput collapse (measured on the
+/// Qwen3-4B-Instruct-2507 w4a16 bundle: 0.6 -> 11.7 tok/s).
+///
+/// Idempotent: re-applying the patch (or applying it to a bundle that
+/// doesn't need it) is harmless.
+fn patch_genie_config_for_graph_switching(bundle_root: &Path) -> std::io::Result<()> {
+    let candidates = ["genie_config.json", "text-generator.json"];
+    for fname in candidates {
+        let path = bundle_root.join(fname);
+        if !path.is_file() {
+            continue;
+        }
+        let raw = std::fs::read_to_string(&path)?;
+        let mut value: serde_json::Value = match serde_json::from_str(&raw) {
+            Ok(v) => v,
+            Err(e) => {
+                tracing::warn!(path = %path.display(), error = %e, "could not parse JSON; skipping");
+                continue;
+            }
+        };
+
+        // Find the QnnHtp object regardless of which top-level wrapper
+        // (`dialog` for genie_config, `text-generator` for the new schema).
+        let qnn_htp = value
+            .as_object_mut()
+            .and_then(|root| root.values_mut().next())
+            .and_then(|wrap| wrap.get_mut("engine"))
+            .and_then(|eng| eng.get_mut("backend"))
+            .and_then(|be| be.get_mut("QnnHtp"))
+            .and_then(|h| h.as_object_mut());
+
+        let Some(htp) = qnn_htp else { continue };
+
+        // Already explicitly set — leave the bundle author's choice alone.
+        if htp.contains_key("enable-graph-switching") {
+            continue;
+        }
+
+        htp.insert(
+            "enable-graph-switching".to_string(),
+            serde_json::Value::Bool(true),
+        );
+
+        let serialized = serde_json::to_string_pretty(&value)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+        std::fs::write(&path, serialized)?;
+        info!(path = %path.display(), "patched: enable-graph-switching=true");
+    }
+    Ok(())
+}
+
 fn rel_join(parent: &Path, child: &str) -> String {
     parent
         .join(child)
@@ -436,3 +504,118 @@ trait Pipe: Sized {
     }
 }
 impl<T> Pipe for T {}
+
+#[cfg(test)]
+mod patch_tests {
+    use super::patch_genie_config_for_graph_switching;
+    use std::fs;
+    use tempfile::TempDir;
+
+    fn write_config(dir: &std::path::Path, name: &str, json: &str) {
+        fs::write(dir.join(name), json).unwrap();
+    }
+
+    #[test]
+    fn injects_flag_into_genie_config() {
+        let tmp = TempDir::new().unwrap();
+        write_config(
+            tmp.path(),
+            "genie_config.json",
+            r#"{
+  "dialog": {
+    "engine": {
+      "backend": {
+        "QnnHtp": {
+          "use-mmap": true,
+          "poll": true
+        }
+      }
+    }
+  }
+}"#,
+        );
+
+        patch_genie_config_for_graph_switching(tmp.path()).unwrap();
+        let after = fs::read_to_string(tmp.path().join("genie_config.json")).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&after).unwrap();
+        let flag = v["dialog"]["engine"]["backend"]["QnnHtp"]["enable-graph-switching"].as_bool();
+        assert_eq!(flag, Some(true), "flag should have been set; got: {after}");
+    }
+
+    #[test]
+    fn idempotent_when_flag_already_set_to_false() {
+        // Bundle author explicitly chose `false` — leave it alone.
+        let tmp = TempDir::new().unwrap();
+        write_config(
+            tmp.path(),
+            "genie_config.json",
+            r#"{
+  "dialog": {
+    "engine": {
+      "backend": {
+        "QnnHtp": {
+          "enable-graph-switching": false
+        }
+      }
+    }
+  }
+}"#,
+        );
+        patch_genie_config_for_graph_switching(tmp.path()).unwrap();
+        let after = fs::read_to_string(tmp.path().join("genie_config.json")).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&after).unwrap();
+        let flag = v["dialog"]["engine"]["backend"]["QnnHtp"]["enable-graph-switching"].as_bool();
+        assert_eq!(flag, Some(false), "explicit false must not be overwritten");
+    }
+
+    #[test]
+    fn handles_text_generator_wrapper() {
+        // Newer pipeline-API bundles wrap the same schema under
+        // `text-generator` instead of `dialog`. Patcher should walk it
+        // generically.
+        let tmp = TempDir::new().unwrap();
+        write_config(
+            tmp.path(),
+            "text-generator.json",
+            r#"{
+  "text-generator": {
+    "engine": {
+      "backend": {
+        "QnnHtp": {
+          "poll": true
+        }
+      }
+    }
+  }
+}"#,
+        );
+        patch_genie_config_for_graph_switching(tmp.path()).unwrap();
+        let after = fs::read_to_string(tmp.path().join("text-generator.json")).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&after).unwrap();
+        let flag =
+            v["text-generator"]["engine"]["backend"]["QnnHtp"]["enable-graph-switching"].as_bool();
+        assert_eq!(flag, Some(true));
+    }
+
+    #[test]
+    fn skips_when_no_qnn_htp_block() {
+        // GPU/CPU bundle: no QnnHtp block means nothing to patch; no error.
+        let tmp = TempDir::new().unwrap();
+        write_config(
+            tmp.path(),
+            "genie_config.json",
+            r#"{"dialog": {"engine": {"backend": {"type": "QnnGenAiTransformer"}}}}"#,
+        );
+        patch_genie_config_for_graph_switching(tmp.path()).unwrap();
+        let after = fs::read_to_string(tmp.path().join("genie_config.json")).unwrap();
+        // No QnnHtp -> nothing changed; assert no flag was created somewhere weird.
+        assert!(!after.contains("enable-graph-switching"));
+    }
+
+    #[test]
+    fn handles_missing_files_gracefully() {
+        // Bundle with neither config file: patch should no-op cleanly.
+        let tmp = TempDir::new().unwrap();
+        patch_genie_config_for_graph_switching(tmp.path()).unwrap();
+    }
+}

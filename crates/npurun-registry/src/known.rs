@@ -86,6 +86,58 @@ pub const KNOWN_MODELS: &[KnownModel] = &[
             next_user_turn: "<|im_start|>user\n{user}<|im_end|>\n<|im_start|>assistant\n",
         },
     },
+    // Qwen3 4B Instruct (July 2025 update). Verified end-to-end on
+    // X1E at 11.7 tok/s post-TTFT — matches Phi 3.5 Mini's NPU
+    // ceiling. Bundle uses the new multi-graph naming scheme
+    // (`prompt_ar128_*` / `token_ar1_*`); pull_model auto-injects
+    // `enable-graph-switching: true` after extract.
+    KnownModel {
+        name: "qwen3-4b-instruct-2507",
+        url: "https://qaihub-public-assets.s3.us-west-2.amazonaws.com/qai-hub-models/models/qwen3_4b_instruct_2507/releases/v0.52.0/qwen3_4b_instruct_2507-genie-w4a16-qualcomm_snapdragon_x_elite.zip",
+        arch: "qwen3",
+        quant: "w4a16",
+        size_estimate_bytes: 2_530_000_000,
+        qairt_version: "2.45.0",
+        chat_template: ChatTemplateSpec {
+            system_prompt: "You are a helpful AI assistant",
+            template: "<|im_start|>system\n{system}<|im_end|>\n<|im_start|>user\n{user}<|im_end|>\n<|im_start|>assistant\n",
+            assistant_turn: "{assistant}<|im_end|>\n",
+            next_user_turn: "<|im_start|>user\n{user}<|im_end|>\n<|im_start|>assistant\n",
+        },
+    },
+    // Qwen3 4B base. Same multi-graph format as Instruct-2507; prefer
+    // Instruct-2507 for chat. Bundled here so users can grab the base
+    // for fine-tuning experiments.
+    KnownModel {
+        name: "qwen3-4b",
+        url: "https://qaihub-public-assets.s3.us-west-2.amazonaws.com/qai-hub-models/models/qwen3_4b/releases/v0.52.0/qwen3_4b-genie-w4a16-qualcomm_snapdragon_x_elite.zip",
+        arch: "qwen3",
+        quant: "w4a16",
+        size_estimate_bytes: 2_530_000_000,
+        qairt_version: "2.45.0",
+        chat_template: ChatTemplateSpec {
+            system_prompt: "You are a helpful AI assistant",
+            template: "<|im_start|>system\n{system}<|im_end|>\n<|im_start|>user\n{user}<|im_end|>\n<|im_start|>assistant\n",
+            assistant_turn: "{assistant}<|im_end|>\n",
+            next_user_turn: "<|im_start|>user\n{user}<|im_end|>\n<|im_start|>assistant\n",
+        },
+    },
+    // Qwen2.5 VL 7B Instruct. Vision-language; npurun feeds text only,
+    // vision tower stays unused. Multi-graph w4a16 bundle for X-Elite.
+    KnownModel {
+        name: "qwen-2-5-vl-7b-instruct",
+        url: "https://qaihub-public-assets.s3.us-west-2.amazonaws.com/qai-hub-models/models/qwen2_5_vl_7b_instruct/releases/v0.52.0/qwen2_5_vl_7b_instruct-genie-w4a16-qualcomm_snapdragon_x_elite.zip",
+        arch: "qwen2-vl",
+        quant: "w4a16",
+        size_estimate_bytes: 4_000_000_000,
+        qairt_version: "2.45.0",
+        chat_template: ChatTemplateSpec {
+            system_prompt: "You are a helpful AI assistant",
+            template: "<|im_start|>system\n{system}<|im_end|>\n<|im_start|>user\n{user}<|im_end|>\n<|im_start|>assistant\n",
+            assistant_turn: "{assistant}<|im_end|>\n",
+            next_user_turn: "<|im_start|>user\n{user}<|im_end|>\n<|im_start|>assistant\n",
+        },
+    },
 ];
 
 impl KnownModel {

@@ -276,11 +276,7 @@ async fn chat_completions(
 
     // Reject streaming + tools combo for now — partial tool_call deltas
     // are non-trivial and clients that use tools usually accept blocking.
-    let has_tools = req
-        .tools
-        .as_ref()
-        .map(|t| !t.is_empty())
-        .unwrap_or(false);
+    let has_tools = req.tools.as_ref().map(|t| !t.is_empty()).unwrap_or(false);
     if has_tools && req.stream {
         return (
             StatusCode::BAD_REQUEST,
@@ -475,11 +471,11 @@ async fn chat_completions_blocking(
     } else {
         None
     };
-    let (content_out, tool_calls_out, finish_reason): (Option<&str>, _, &'static str) =
-        match parsed {
-            Some(calls) => (None, Some(calls), "tool_calls"),
-            None => (Some(text.as_str()), None, "stop"),
-        };
+    let (content_out, tool_calls_out, finish_reason): (Option<&str>, _, &'static str) = match parsed
+    {
+        Some(calls) => (None, Some(calls), "tool_calls"),
+        None => (Some(text.as_str()), None, "stop"),
+    };
 
     let body = ChatResponse {
         id,
@@ -807,7 +803,9 @@ fn augment_for_tools(messages: Vec<CoreChatMessage>, tools: &[ToolSpec]) -> Vec<
     hint.push_str(
         "You have access to the following tools. When you need to call one, output a single line of EXACTLY this form, and nothing else:\n",
     );
-    hint.push_str("<tool_call>{\"name\": \"<tool_name>\", \"arguments\": {<json args>}}</tool_call>\n\n");
+    hint.push_str(
+        "<tool_call>{\"name\": \"<tool_name>\", \"arguments\": {<json args>}}</tool_call>\n\n",
+    );
     hint.push_str("Example — to call get_current_time with no arguments:\n");
     hint.push_str("<tool_call>{\"name\": \"get_current_time\", \"arguments\": {}}</tool_call>\n\n");
     hint.push_str("Rules:\n");
@@ -1141,7 +1139,8 @@ mod tool_tests {
 
     #[test]
     fn parse_tool_calls_extracts_single_call() {
-        let text = "<tool_call>{\"name\": \"calc\", \"arguments\": {\"expression\": \"2+2\"}}</tool_call>";
+        let text =
+            "<tool_call>{\"name\": \"calc\", \"arguments\": {\"expression\": \"2+2\"}}</tool_call>";
         let calls = parse_tool_calls(text).expect("expected one call");
         assert_eq!(calls.len(), 1);
         assert_eq!(calls[0].function.name, "calc");

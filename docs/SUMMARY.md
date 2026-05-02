@@ -31,6 +31,7 @@
 - [Architecture](architecture.md)
 - [Findings](findings.md)
 - [ORT-QNN vs libGenie probe](findings_ort_vs_genie.md)
+- [Multi-graph bundle fix (20× speedup)](multi-graph-fix.md)
 - [Paper](paper.md)
 - [Repo hygiene](repo_hygiene.md)
 - [Specula follow-ups](specula_followups.md)

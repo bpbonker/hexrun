@@ -4,6 +4,23 @@ All notable changes to npurun will be documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Multi-graph bundle compatibility (20× decode speedup)**: bundles
+  exported with `prompt_ar128_*` / `token_ar1_*` graph names (Qwen3,
+  Qwen2.5-VL, etc.) need `enable-graph-switching: true` in
+  `genie_config.json` or libGenie 1.17.0 stays on the prefill graph
+  for every decode token. `npurun pull` now injects the flag
+  automatically after extraction. Measured on Qwen3-4B-Instruct-2507
+  w4a16 / X1E: 0.6 → 11.7 tok/s (qnn example) / 14.9 tok/s
+  (`npurun bench`). See [`docs/multi-graph-fix.md`](docs/multi-graph-fix.md).
+- **Registry**: three new entries with verified-working precompiled
+  bundles — `qwen3-4b-instruct-2507` (4B, 14.9 tok/s),
+  `qwen3-4b` (base), `qwen-2-5-vl-7b-instruct` (7B vision-language,
+  text-only inference path).
+
 ## [0.1.0-rc.3] — 2026-05-01
 
 ### Added

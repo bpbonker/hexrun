@@ -8,11 +8,13 @@ text-generation-webui) run CPU-only on Snapdragon X laptops. The
 on top of Qualcomm's Genie SDK, an Ollama-class CLI, and an
 OpenAI/Ollama-compatible HTTP server. Verified on hardware.
 
-> **Status:** working preview; tagged builds incoming. The Phi 3.5 Mini
-> path is chat-usable (~11.7 tokens/sec on the X1E NPU); the Qwen 2.5 7B
-> path runs but is slower than CPU paths today (the 7B regime is hard on
-> X1E silicon). See [`docs/benchmarks.md`](docs/benchmarks.md) for honest
-> numbers.
+> **Status:** working preview; tagged builds incoming. Qwen3-4B
+> Instruct 2507 hits **~14.9 tok/s** under `npurun bench` on the X1E
+> NPU; Phi 3.5 Mini ~11.7 tok/s; Qwen 2.5 VL-7B (w4a16) ~9.1 tok/s
+> text-only. The older Qwen 2.5 7B w8a16 path still runs slow
+> (~1.9 tok/s) — that bundle predates the multi-graph w4a16 era and
+> is kept for comparison. See
+> [`docs/benchmarks.md`](docs/benchmarks.md) for honest numbers.
 
 ---
 
@@ -72,15 +74,18 @@ The table above is specifically about **NPU** acceleration — most of these too
 | Model | Hardware | Steady-state | TTFT |
 |---|---|---:|---:|
 | Phi 3.5 Mini (w4a16, NPU) | X1E | **~11.7 tok/s** | **~200 ms** |
+| Qwen3-4B Instruct 2507 (w4a16, NPU) | X1E | **~11.7 tok/s** | ~120 ms |
+| Qwen 2.5 VL-7B Instruct (w4a16, NPU, text-only) | X1E | **~9.1 tok/s** | ~156 ms |
 | Qwen 2.5 7B (w8a16, NPU) | X1E | ~1.9 tok/s | ~660 ms |
 | llama.cpp on the same laptop's CPU (Phi 3.5 Q4) | X1E CPU | ~5–8 tok/s (estimated) | — |
 
-The Phi result is the headline: faster than CPU paths, NPU does the work,
-**~1.27 J/token at ~6.9 W delta** — measured on battery, roughly 2–3×
-more energy-efficient than CPU paths on the same laptop (see
-[`docs/benchmarks.md`](docs/benchmarks.md) for methodology). The 7B
-regime is currently slower than CPU on this generation of silicon — see
-[`docs/findings.md`](docs/findings.md) for the discussion.
+Headline: w4a16 bundles in the 4B–7B range now run at chat-usable
+speeds on the NPU — the older w8a16 Qwen 2.5 7B path is the slow one,
+and the newer Qwen3-4B and VL-7B w4a16 bundles clear it by ~5–6×.
+**~1.27 J/token at ~6.9 W delta** on Phi 3.5 Mini, measured on battery,
+roughly 2–3× more energy-efficient than CPU paths on the same laptop
+(see [`docs/benchmarks.md`](docs/benchmarks.md) for methodology and
+[`docs/findings.md`](docs/findings.md) for why w8a16 was the slow path).
 
 ## Prerequisites
 

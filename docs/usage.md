@@ -103,7 +103,7 @@ serve whatever it has resident. If the server is busy (HTTP 429), the
 client errors immediately rather than retrying — that defeats the
 point of bypassing cold-load.
 
-### `npurun bench <model> [--prompt P] [--repeats N] [--no-skip-first] [--ctx N] [--csv PATH]`
+### `npurun bench <model> [--prompt P] [--repeats N] [--no-skip-first] [--ctx N] [--csv PATH] [--duration SECS]`
 
 Warm-query benchmark. Runs four built-in prompts (or one you supply via
 `--prompt`) `--repeats` times each, prints per-prompt and per-repeat
@@ -158,6 +158,28 @@ npurun bench phi-3.5-mini --ctx 4096 --csv .\phi-4096.csv
 
 `--csv` errors fast if the parent directory does not exist, rather than
 panicking at write time.
+
+#### Sustained stress with `--duration`
+
+`--duration <SECS>` swaps the fixed-iteration loop for a wall-clock
+window. The harness keeps cycling the prompt set until the window
+elapses, then prints an extended stats block: per-query
+`tps_post_ttft`, p50 / p90, std-dev, and a first-half-vs-second-half
+degradation percentage. Negative degradation means the back half ran
+*faster*; positive means it slowed (typically thermal throttling once
+the package gets hot).
+
+```powershell
+npurun bench qwen3-4b-instruct-2507 --duration 60      # 1-minute soak
+npurun bench qwen3-4b-instruct-2507 --duration 600 --csv .\soak.csv
+```
+
+`--duration` is mutually informative with `--csv`: every query inside
+the window is logged, so post-hoc plotting against wall-clock makes
+throttle onset visible.
+
+If both `--duration` and `--repeats` are supplied, `--duration` wins
+and `--repeats` is ignored.
 
 ### `npurun version`
 

@@ -102,6 +102,14 @@ enum Cmd {
         /// subsequent runs append.
         #[arg(long, value_name = "PATH")]
         csv: Option<PathBuf>,
+        /// Stress mode: keep cycling through the prompt set until at
+        /// least N seconds of wall-clock have elapsed. Overrides
+        /// `--repeats`. Reports extended stats — min/median/max tok/s,
+        /// std-dev, and a first-half-vs-second-half degradation percent
+        /// to catch thermal throttling. Use 300+ for a meaningful
+        /// thermal window on Snapdragon X.
+        #[arg(long, value_name = "SECS")]
+        duration: Option<u64>,
     },
     /// Start the OpenAI- and Ollama-compatible HTTP server. The named model
     /// is loaded on startup and stays resident in NPU shared memory for
@@ -173,6 +181,7 @@ async fn main() -> Result<()> {
             skip_first,
             ctx,
             csv,
+            duration,
         } => bench_model(
             &model,
             prompt.as_deref(),
@@ -180,6 +189,7 @@ async fn main() -> Result<()> {
             skip_first,
             ctx,
             csv.as_deref(),
+            duration,
         )?,
         Cmd::Ps { addr, auth_token } => probe_ps(&addr, auth_token.as_deref()).await?,
         Cmd::Serve {
@@ -719,6 +729,7 @@ fn bench_model(
     skip_first: bool,
     ctx: Option<u32>,
     csv_path: Option<&Path>,
+    duration_secs: Option<u64>,
 ) -> Result<()> {
     let dir = resolve_model_dir(model)?;
     if let Some(requested) = ctx {
@@ -761,14 +772,33 @@ fn bench_model(
         Some(p) => vec![p],
         None => BENCH_PROMPTS.to_vec(),
     };
-    let total_runs = prompts.len() * repeats.max(1);
-    eprintln!("[running {total_runs} queries]\n");
+    let stress = duration_secs.is_some();
+    let stress_window = duration_secs.map(Duration::from_secs);
+    if stress {
+        eprintln!(
+            "[stress mode: cycling prompts for {}s]\n",
+            duration_secs.unwrap()
+        );
+    } else {
+        let total_runs = prompts.len() * repeats.max(1);
+        eprintln!("[running {total_runs} queries]\n");
+    }
 
     let model_name = engine.manifest().name.clone();
-    let mut runs: Vec<RunStat> = Vec::with_capacity(total_runs);
+    let mut runs: Vec<RunStat> = Vec::new();
     let mut idx = 0usize;
-    for repeat_idx in 0..repeats.max(1) {
+    let stress_started = Instant::now();
+    let mut repeat_idx = 0usize;
+    'outer: loop {
         for prompt in &prompts {
+            // Stress-mode budget check before each query so we always
+            // finish the in-flight one but don't start a new one past
+            // the wall.
+            if let Some(window) = stress_window {
+                if stress_started.elapsed() >= window {
+                    break 'outer;
+                }
+            }
             idx += 1;
             let started = Instant::now();
             let mut output = String::new();
@@ -789,11 +819,21 @@ fn bench_model(
             } else {
                 0.0
             };
-            println!("--- query {idx} ---");
-            println!("    prompt: {prompt}");
-            println!("    response ({tokens} approx tokens): {}", output.trim());
-            println!("    total: {total:.2?}   ttft: {ttft:.2?}   gen: {gen_time:.2?}   tok/s post-ttft: {tps_post:.1}");
-            println!();
+            // Stress mode shows a single line per query so 5+ minute
+            // runs don't drown the terminal in full responses.
+            if stress {
+                let elapsed_s = stress_started.elapsed().as_secs_f64();
+                println!(
+                    "  [t+{elapsed_s:6.1}s  q{idx:4}] tokens={tokens:3} ttft={:5} ms tps={tps_post:5.1}",
+                    ttft.as_millis()
+                );
+            } else {
+                println!("--- query {idx} ---");
+                println!("    prompt: {prompt}");
+                println!("    response ({tokens} approx tokens): {}", output.trim());
+                println!("    total: {total:.2?}   ttft: {ttft:.2?}   gen: {gen_time:.2?}   tok/s post-ttft: {tps_post:.1}");
+                println!();
+            }
             runs.push(RunStat {
                 total,
                 ttft,
@@ -815,6 +855,10 @@ fn bench_model(
                 )
                 .with_context(|| format!("writing CSV row to {}", csv_path.unwrap().display()))?;
             }
+        }
+        repeat_idx += 1;
+        if !stress && repeat_idx >= repeats.max(1) {
+            break;
         }
     }
 
@@ -851,6 +895,87 @@ fn bench_model(
         "    aggregate tok/s (post ttft): {:.1}",
         total_tokens as f64 / total_gen_secs
     );
+
+    // Stress-mode extended stats: percentiles, std-dev, and a
+    // first-half-vs-second-half degradation percent. Degradation is the
+    // single number that catches thermal throttling: if the second half
+    // of a 5+ minute run is materially slower than the first half, the
+    // chip is throttling under sustained load.
+    if stress {
+        let mut tps_samples: Vec<f64> = warm
+            .iter()
+            .map(|r| {
+                if r.gen_time.as_secs_f64() > 0.0 {
+                    r.tokens as f64 / r.gen_time.as_secs_f64()
+                } else {
+                    0.0
+                }
+            })
+            .collect();
+        tps_samples.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        let pct = |p: f64| -> f64 {
+            let idx = ((p / 100.0) * (tps_samples.len() as f64 - 1.0)).round() as usize;
+            tps_samples[idx.min(tps_samples.len() - 1)]
+        };
+        let mean: f64 = tps_samples.iter().sum::<f64>() / tps_samples.len() as f64;
+        let variance: f64 = tps_samples
+            .iter()
+            .map(|x| (x - mean).powi(2))
+            .sum::<f64>()
+            / tps_samples.len() as f64;
+        let stdev = variance.sqrt();
+        let half = warm.len() / 2;
+        let first_half_tps = if half > 0 {
+            let toks: usize = warm.iter().take(half).map(|r| r.tokens).sum();
+            let secs: f64 = warm
+                .iter()
+                .take(half)
+                .map(|r| r.gen_time.as_secs_f64())
+                .sum();
+            if secs > 0.0 { toks as f64 / secs } else { 0.0 }
+        } else {
+            0.0
+        };
+        let second_half_tps = if warm.len() - half > 0 {
+            let toks: usize = warm.iter().skip(half).map(|r| r.tokens).sum();
+            let secs: f64 = warm
+                .iter()
+                .skip(half)
+                .map(|r| r.gen_time.as_secs_f64())
+                .sum();
+            if secs > 0.0 { toks as f64 / secs } else { 0.0 }
+        } else {
+            0.0
+        };
+        let degradation_pct = if first_half_tps > 0.0 {
+            ((first_half_tps - second_half_tps) / first_half_tps) * 100.0
+        } else {
+            0.0
+        };
+        println!();
+        println!("==  stress stats  ==");
+        println!(
+            "    queries completed:        {} (in {:.1}s)",
+            warm.len(),
+            stress_started.elapsed().as_secs_f64()
+        );
+        println!("    tok/s post-ttft min:      {:.1}", tps_samples[0]);
+        println!("    tok/s post-ttft p50:      {:.1}", pct(50.0));
+        println!("    tok/s post-ttft p90:      {:.1}", pct(90.0));
+        println!(
+            "    tok/s post-ttft max:      {:.1}",
+            tps_samples[tps_samples.len() - 1]
+        );
+        println!("    tok/s post-ttft stdev:    {stdev:.2}");
+        println!(
+            "    first-half tps:           {first_half_tps:.1}  -> second-half tps: {second_half_tps:.1}  (degradation {degradation_pct:+.1}%)"
+        );
+        if degradation_pct > 5.0 {
+            println!(
+                "    NOTE: >5% degradation between halves likely indicates thermal throttling."
+            );
+        }
+    }
     Ok(())
 }
 

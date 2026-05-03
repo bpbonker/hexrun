@@ -60,3 +60,9 @@ qnn_profile_*.csv
 
 # Ad-hoc verifier / bench logs
 /logs/
+
+# Open WebUI / agent runtime artefacts (machine-local)
+.webui_secret_key
+.claude/
+run-claude.cmd
+CLAUDE.md

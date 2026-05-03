@@ -1,0 +1,44 @@
+# Pinned deps for qai-hub-models LLM export on Linux x86_64.
+# Discovered the hard way after three failed exports on Windows ARM:
+#   1. transformers 5.7.0 broke SHAQwen3Attention.forward_sha kwargs → pin 4.51.0
+#   2. transformers 4.51.0 needs accelerate for init_empty_weights → add accelerate
+#   3. torch 2.11.0 rejected by qai-hub-models torch<2.9 check → pin 2.4.1 (matches model's own requirements.txt)
+# The model-specific requirements at qai_hub_models/models/<model>/requirements.txt
+# is the source of truth for these pins.
+#
+# Usage:
+#   python3.10 -m venv venv-export
+#   ./venv-export/bin/python -m pip install -r requirements.txt
+#   # Linux only — provides AIMET-ONNX for non-DEFAULT_W4A16 quantization
+
+qai-hub-models==0.52.0
+qai-hub==0.49.0
+
+# Model-specific pins from qai_hub_models/models/qwen3_4b_instruct_2507/requirements.txt
+transformers==4.51.0
+sentencepiece==0.2.1
+torch==2.4.1
+torchvision==0.19.1
+onnx==1.18.0
+onnxruntime==1.22
+
+# transformers 4.51 calls accelerate.init_empty_weights without an availability check
+accelerate
+
+# qai-hub-models requires huggingface_hub<1.0,>=0.34.0; transformers 4.51 will pull a compatible one
+# but pin explicitly to avoid resolver drift
+huggingface-hub<1.0,>=0.34.0
+
+# Linux-only — required for AIMET quantization paths (any model not exposing DEFAULT_W4A16).
+# Skipped automatically on non-Linux or non-Python-3.10 platforms.
+aimet-onnx==2.26.0; sys_platform == 'linux' and python_version == "3.10"
+
+# psutil is in qai-hub-models' base requirements but only on non-Windows
+psutil
+
+# Build helper if any sdist needs cmake (onnxsim's setup.py looks for it on PATH)
+cmake
+
+# NOTE: onnxsim==0.5.0 sdist on PyPI has metadata mismatch (says 0.4.36, version 0.5.0) and
+# pip rejects it. If a model genuinely requires onnxsim, install 0.4.36 manually:
+#   pip install onnxsim==0.4.36

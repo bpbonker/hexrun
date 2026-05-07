@@ -38,7 +38,7 @@ bytes = "1"
 clap = { version = "4", features = ["derive", "env"] }
 
 # HTTP server / client
-axum = { version = "0.7", features = ["macros"] }
+axum = { version = "0.8", features = ["macros"] }
 tower = "0.5"
 tower-http = { version = "0.6", features = ["cors", "trace"] }
 reqwest = { version = "0.12", features = ["stream", "rustls-tls"], default-features = false }

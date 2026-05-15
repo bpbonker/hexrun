@@ -8,6 +8,13 @@ All notable changes to npurun will be documented here. Format follows
 
 ### Added
 
+- **`npurun show-hardware` now reports the NPU driver version + date**.
+  Probed via `Get-PnpDeviceProperty` against `DEVPKEY_Device_DriverVersion`
+  and `DEVPKEY_Device_DriverDate`. Two machines on the same SoC + QAIRT
+  SDK can still fail differently if the OEM-shipped HTP driver diverges
+  — this is the field that disambiguates. Filed against issue #12 where
+  `Could not create context from binary` fires on a Lenovo Yoga Slim 7x
+  with otherwise-identical config to a verified-working machine.
 - **Multi-graph bundle compatibility (20× decode speedup)**: bundles
   exported with `prompt_ar128_*` / `token_ar1_*` graph names (Qwen3,
   Qwen2.5-VL, etc.) need `enable-graph-switching: true` in

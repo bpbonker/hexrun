@@ -601,6 +601,7 @@ fn show_hardware() -> Result<()> {
     let soc =
         detect_soc().unwrap_or_else(|| "(unknown — Win32_Processor probe failed)".to_string());
     let npu = detect_npu_pnp().unwrap_or_else(|| "(none reported by Get-PnpDevice)".to_string());
+    let npu_driver = detect_npu_driver();
     let qairt_root = env::var("QNN_SDK_ROOT").ok();
     let hexagon_arch = qairt_root
         .as_ref()
@@ -621,6 +622,13 @@ fn show_hardware() -> Result<()> {
 
     println!("SoC:              {soc}");
     println!("NPU:              {npu}");
+    match npu_driver {
+        Some((ver, Some(date))) => println!("NPU driver:       {ver}  ({date})"),
+        Some((ver, None)) => println!("NPU driver:       {ver}"),
+        None => println!(
+            "NPU driver:       (Get-PnpDeviceProperty probe failed — check Device Manager)"
+        ),
+    }
     println!("Hexagon arch:     {hexagon_arch}");
     match (qairt_version, qairt_root.as_ref()) {
         (Some(ver), Some(root)) => println!("QAIRT SDK:        {ver}  ({root})"),
@@ -683,6 +691,42 @@ fn detect_npu_pnp() -> Option<String> {
     } else {
         Some(s)
     }
+}
+
+/// Probe `Get-PnpDeviceProperty` for the Qualcomm NPU's user-mode driver
+/// version and date. Two machines on the same SoC + QAIRT SDK can still
+/// fail differently if the HTP driver bundle (shipped by OEM / Windows
+/// Update) diverges, and `Could not create context from binary` is the
+/// classic symptom — see issue #12.
+fn detect_npu_driver() -> Option<(String, Option<String>)> {
+    let out = std::process::Command::new("powershell")
+        .args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            r#"$d = Get-PnpDevice -Status OK | Where-Object { $_.Manufacturer -match 'Qualcomm' -and ($_.Class -eq 'Compute' -or $_.FriendlyName -match 'NPU|Hexagon|AI Engine') } | Select-Object -First 1; if ($d) { $ver = (Get-PnpDeviceProperty -InstanceId $d.InstanceId -KeyName 'DEVPKEY_Device_DriverVersion').Data; $date = (Get-PnpDeviceProperty -InstanceId $d.InstanceId -KeyName 'DEVPKEY_Device_DriverDate').Data; if ($date) { $ds = $date.ToString('yyyy-MM-dd') } else { $ds = '' }; "$ver|$ds" }"#,
+        ])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if s.is_empty() {
+        return None;
+    }
+    let (ver, date) = s.split_once('|')?;
+    let ver = ver.trim();
+    let date = date.trim();
+    if ver.is_empty() {
+        return None;
+    }
+    let date = if date.is_empty() {
+        None
+    } else {
+        Some(date.to_string())
+    };
+    Some((ver.to_string(), date))
 }
 
 /// Walk `<QAIRT>/lib/` looking for a `hexagon-vNN/` directory. The SDK

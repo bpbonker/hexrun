@@ -197,13 +197,16 @@ QAIRT SDK    2.45.0  (C:\AAA\Personal\AI\qairt\2.45.0)
 ### `npurun show-hardware`
 
 Probes the local NPU stack and reports SoC, the Qualcomm Hexagon NPU
-PnP entry, the Hexagon architectures the installed QAIRT SDK ships
-support for, and the QAIRT + libGenie versions.
+PnP entry, the user-mode NPU driver version (the OEM-shipped HTP
+driver, which can differ between OEM laptops on the same SoC), the
+Hexagon architectures the installed QAIRT SDK ships support for, and
+the QAIRT + libGenie versions.
 
 ```text
 PS> npurun show-hardware
 SoC:              Snapdragon(R) X 12-core X1E80100 @ 3.40 GHz
 NPU:              Snapdragon(R) X Elite - X1E80100 - Qualcomm(R) Hexagon(TM) NPU
+NPU driver:       30.0.219.1000  (2025-09-11)
 Hexagon arch:     hexagon-v66, hexagon-v68, hexagon-v69, hexagon-v73, hexagon-v75, hexagon-v79, hexagon-v81
 QAIRT SDK:        2.45.0  (C:\AAA\Personal\AI\qairt\2.45.0)
 libGenie:         1.17.0

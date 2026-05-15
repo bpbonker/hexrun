@@ -57,6 +57,7 @@ body:
       placeholder: |
         SoC:              Snapdragon(R) X 12-core X1E80100 @ 3.40 GHz
         NPU:              Snapdragon(R) X Elite - X1E80100 - Qualcomm(R) Hexagon(TM) NPU
+        NPU driver:       30.0.219.1000  (2025-09-11)
         Hexagon arch:     hexagon-v66, hexagon-v68, ...
         QAIRT SDK:        2.45.0  (C:\...\qairt\2.45.0)
         libGenie:         1.17.0
